@@ -15,7 +15,7 @@ import shutil
 import requests
 from flask import Flask, Response, abort, jsonify, request, send_file, send_from_directory, stream_with_context
 
-from . import __version__, config, discovery, drives
+from . import __version__, config, discovery, drives, events, updater
 
 PROXY_TIMEOUT = 15
 app = Flask(__name__, static_folder="static", static_url_path="/static")
@@ -23,6 +23,7 @@ app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024 * 1024  # 16 GiB uploads
 
 _cfg = config.load()
 _discovery = discovery.Discovery(lambda: _cfg)
+_updater = updater.Updater(lambda: _cfg)
 
 
 def get_cfg():
@@ -117,13 +118,47 @@ def api_settings():
             _cfg["host_mode"] = bool(body["host_mode"])
         if "extra_paths" in body and isinstance(body["extra_paths"], list):
             _cfg["extra_paths"] = [str(p) for p in body["extra_paths"] if str(p).strip()]
+        if "auto_update" in body:
+            _cfg["auto_update"] = bool(body["auto_update"])
         config.save(_cfg)
     return jsonify({
         "device_name": _cfg.get("device_name"),
         "host_mode": bool(_cfg.get("host_mode")),
         "extra_paths": _cfg.get("extra_paths", []),
+        "auto_update": bool(_cfg.get("auto_update")),
         "port": _cfg.get("port"),
     })
+
+
+# -- self-update --------------------------------------------------------------
+
+@app.route("/api/update/status")
+def api_update_status():
+    return jsonify(_updater.status())
+
+
+@app.route("/api/update/check", methods=["POST"])
+def api_update_check():
+    return jsonify(_updater.check())
+
+
+@app.route("/api/update/apply", methods=["POST"])
+def api_update_apply():
+    if not _updater.is_git_repo():
+        abort(400, "not a git checkout, cannot self-update")
+    if not _updater.apply():
+        return jsonify({"error": "update already in progress"}), 409
+    return jsonify({"ok": True})
+
+
+@app.route("/api/events")
+def api_events():
+    q = events.subscribe()
+    return Response(
+        stream_with_context(events.stream(q)),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # -- drives -------------------------------------------------------------------
@@ -341,6 +376,7 @@ def api_error(err):
 
 def main():
     _discovery.start()
+    _updater.start()
     port = int(_cfg.get("port", config.DEFAULT_PORT))
     print("Jio %s - '%s' listening on http://0.0.0.0:%d (host mode: %s)" % (
         __version__, _cfg.get("device_name"), port, "on" if _cfg.get("host_mode") else "off"))

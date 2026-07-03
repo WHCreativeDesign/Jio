@@ -8,6 +8,7 @@
 </head>
 <body>
 <div id="scanlines"></div>
+<div id="update-banner" role="status" aria-live="polite"></div>
 
 <div id="page">
   <!-- ============ MASTHEAD ============ -->
@@ -123,6 +124,29 @@
             <div class="field">
               <button class="key key-accent" id="btn-save">COMMIT</button>
               <span id="save-msg" class="ok-msg"></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="module">
+          <div class="module-head">SOFTWARE UPDATE</div>
+          <div class="module-body">
+            <div class="telemetry">
+              <div class="tele-row"><span>RUNNING</span><span id="upd-current">-------</span></div>
+              <div class="tele-row"><span>AVAILABLE</span><span id="upd-latest">-------</span></div>
+              <div class="tele-row"><span>STATUS</span><span id="upd-status">-------</span></div>
+              <div class="tele-row"><span>LAST CHECK</span><span id="upd-checked">-------</span></div>
+            </div>
+            <div class="field" style="margin-top:14px">
+              <label class="switch">
+                <input type="checkbox" id="set-autoupdate">
+                <span class="switch-track"><span class="switch-thumb"></span></span>
+                <span class="switch-caption">INSTALL UPDATES AUTOMATICALLY WHEN FOUND</span>
+              </label>
+            </div>
+            <div class="field">
+              <button class="key" id="btn-check-update">CHECK NOW</button>
+              <button class="key key-accent" id="btn-apply-update">INSTALL UPDATE</button>
             </div>
           </div>
         </section>

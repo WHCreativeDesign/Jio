@@ -1,0 +1,15 @@
+[Unit]
+Description=Jio home NAS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/opt/jio
+ExecStart=/opt/jio/venv/bin/python -m jio
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

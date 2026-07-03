@@ -1,4 +1,4 @@
-/* ..::JiO::.. frontend logic. hand-crafted, no frameworks, just like 1999. */
+/* JIO storage console frontend. Plain JS, no frameworks. */
 
 var state = {
   drive: null,
@@ -25,9 +25,12 @@ function fmtSize(bytes) {
   return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + " " + units[i];
 }
 
+function pad2(n) { return String(n).padStart(2, "0"); }
+
 function fmtDate(ts) {
   var d = new Date(ts * 1000);
-  return d.toLocaleDateString() + " " + d.toLocaleTimeString();
+  return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()) +
+    " " + pad2(d.getHours()) + ":" + pad2(d.getMinutes());
 }
 
 function esc(text) {
@@ -36,22 +39,25 @@ function esc(text) {
   return div.innerHTML;
 }
 
+function sysmsg(text) {
+  $("sysmsg").textContent = text.toUpperCase();
+}
+
 /* ============ views ============ */
 
 function showView(name) {
   ["files", "peers", "settings"].forEach(function (v) {
     $("view-" + v).style.display = v === name ? "" : "none";
   });
-  document.querySelectorAll(".orbbtn").forEach(function (btn) {
+  document.querySelectorAll(".modekey").forEach(function (btn) {
     btn.classList.toggle("active", btn.dataset.view === name);
   });
   if (name === "peers") loadPeers();
   if (name === "settings") loadSettings();
 }
 
-document.querySelectorAll(".orbbtn").forEach(function (btn) {
-  btn.addEventListener("click", function (ev) {
-    ev.preventDefault();
+document.querySelectorAll(".modekey").forEach(function (btn) {
+  btn.addEventListener("click", function () {
     showView(btn.dataset.view);
   });
 });
@@ -61,34 +67,53 @@ document.querySelectorAll(".orbbtn").forEach(function (btn) {
 function loadStatus() {
   api("/api/status").then(function (st) {
     $("led").classList.add("on");
-    $("device-name").textContent = st.name;
-    $("mode-tag").textContent = st.host_mode ? "[HOST MODE]" : "[node]";
+    $("link-state").textContent = "OK";
+    $("device-name").textContent = st.name.toUpperCase();
+    $("mode-tag").textContent = st.host_mode ? "HOST" : "NODE";
+    $("tele-version").textContent = st.version;
+    $("tele-peers").textContent = st.peers.length;
   }).catch(function () {
     $("led").classList.remove("on");
-    $("device-name").textContent = "offline?!";
+    $("link-state").textContent = "DOWN";
   });
 }
 
-/* ============ drives ============ */
+function tickClock() {
+  var d = new Date();
+  $("tele-clock").textContent = pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds());
+}
+
+/* ============ volumes ============ */
+
+function meterHtml(used, total) {
+  var segments = 12;
+  var lit = total ? Math.round((used / total) * segments) : 0;
+  var hot = total && used / total > 0.9;
+  var html = '<div class="drive-meter">';
+  for (var i = 0; i < segments; i++) {
+    html += "<i" + (i < lit ? ' class="lit' + (hot ? " hot" : "") + '"' : "") + "></i>";
+  }
+  return html + "</div>";
+}
 
 function loadDrives() {
   api("/api/drives").then(function (body) {
     state.drives = body.drives;
+    $("tele-drives").textContent = body.drives.length;
     var box = $("drive-list");
     box.innerHTML = "";
     if (!body.drives.length) {
-      box.innerHTML = '<span class="blink">no drives found :(</span>';
+      box.innerHTML = '<div class="dim">NO VOLUMES DETECTED</div>';
       return;
     }
     body.drives.forEach(function (drive) {
       var btn = document.createElement("button");
       btn.className = "drive" + (state.drive === drive.id ? " selected" : "");
-      var pct = drive.total ? Math.round((drive.used / drive.total) * 100) : 0;
       btn.innerHTML =
-        '<span class="drive-label">' + (drive.kind === "internal" ? "&#128190; " : "&#128191; ") + esc(drive.label) + "</span>" +
-        (drive.remote ? ' <span class="drive-remote">@' + esc(drive.device) + "</span>" : "") +
-        '<div class="drive-meter"><div class="drive-meter-fill" style="width:' + pct + '%"></div></div>' +
-        '<span class="drive-space">' + fmtSize(drive.free) + " free of " + fmtSize(drive.total) + "</span>";
+        '<span class="drive-label">' + esc(drive.label.toUpperCase()) + "</span>" +
+        (drive.remote ? '<span class="drive-remote">REMOTE &middot; ' + esc(drive.device.toUpperCase()) + "</span>" : "") +
+        meterHtml(drive.used, drive.total) +
+        '<span class="drive-space">' + fmtSize(drive.free) + " FREE / " + fmtSize(drive.total) + "</span>";
       btn.addEventListener("click", function () {
         state.drive = drive.id;
         state.path = "";
@@ -99,7 +124,7 @@ function loadDrives() {
       box.appendChild(btn);
     });
   }).catch(function (err) {
-    $("drive-list").innerHTML = '<span class="c-yellow">error: ' + esc(err.message) + "</span>";
+    $("drive-list").innerHTML = '<div class="dim">ERROR: ' + esc(err.message) + "</div>";
   });
 }
 
@@ -108,32 +133,34 @@ function loadDrives() {
 function crumbs() {
   var drive = state.drives.find(function (d) { return d.id === state.drive; });
   var label = drive ? drive.label : state.drive;
-  return "C:\\" + label + (state.path ? "\\" + state.path.split("/").join("\\") : "") + "\\";
+  return "/" + label.toUpperCase().replace(/ /g, "_") + (state.path ? "/" + state.path : "");
 }
 
 function loadFiles() {
   if (!state.drive) return;
   $("crumbs").textContent = crumbs();
+  sysmsg("reading " + crumbs());
   api("/api/list?drive=" + encodeURIComponent(state.drive) + "&path=" + encodeURIComponent(state.path))
     .then(function (body) {
       var rows = $("file-rows");
       rows.innerHTML = "";
+      sysmsg(crumbs() + " // " + body.entries.length + " item(s)");
       if (!body.entries.length) {
-        rows.innerHTML = '<tr><td colspan="4" class="empty-msg">&lt;&lt; this folder is totally empty &gt;&gt;</td></tr>';
+        rows.innerHTML = '<tr><td colspan="4" class="empty-msg">DIRECTORY EMPTY</td></tr>';
         return;
       }
       body.entries.forEach(function (entry) {
         var tr = document.createElement("tr");
-        var icon = entry.is_dir ? "&#128193;" : "&#128196;";
+        var glyph = entry.is_dir ? "&#9654;" : "&#9642;";
         var nameCls = "entry-name" + (entry.is_dir ? " entry-dir" : "");
         tr.innerHTML =
-          '<td><span class="' + nameCls + '">' + icon + " " + esc(entry.name) + "</span></td>" +
-          "<td>" + (entry.is_dir ? "&lt;DIR&gt;" : fmtSize(entry.size)) + "</td>" +
+          '<td><span class="' + nameCls + '"><span class="glyph">' + glyph + "</span>" + esc(entry.name) + "</span></td>" +
+          "<td>" + (entry.is_dir ? "DIR" : fmtSize(entry.size)) + "</td>" +
           "<td>" + fmtDate(entry.mtime) + "</td>" +
           "<td>" +
-          (entry.is_dir ? "" : '<button class="rowbtn" data-act="dl">get</button>') +
-          '<button class="rowbtn" data-act="mv">ren</button>' +
-          '<button class="rowbtn" data-act="del">del</button>' +
+          (entry.is_dir ? "" : '<button class="rowbtn" data-act="dl">GET</button>') +
+          '<button class="rowbtn" data-act="mv">REN</button>' +
+          '<button class="rowbtn" data-act="del">DEL</button>' +
           "</td>";
         tr.querySelector(".entry-name").addEventListener("click", function () {
           if (entry.is_dir) {
@@ -155,7 +182,7 @@ function loadFiles() {
       });
     })
     .catch(function (err) {
-      $("file-rows").innerHTML = '<tr><td colspan="4" class="empty-msg">error: ' + esc(err.message) + "</td></tr>";
+      $("file-rows").innerHTML = '<tr><td colspan="4" class="empty-msg">ERROR: ' + esc(err.message) + "</td></tr>";
     });
 }
 
@@ -164,13 +191,13 @@ function joinPath(base, name) {
 }
 
 function download(name) {
-  var url = "/api/download?drive=" + encodeURIComponent(state.drive) +
+  sysmsg("transmitting " + name);
+  window.location.href = "/api/download?drive=" + encodeURIComponent(state.drive) +
     "&path=" + encodeURIComponent(joinPath(state.path, name));
-  window.location.href = url;
 }
 
 function remove(name) {
-  if (!confirm("R U SURE u want to delete '" + name + "'??? this cannot be undone!!")) return;
+  if (!confirm("DELETE '" + name + "'?\nThis operation is irreversible.")) return;
   api("/api/delete", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -179,7 +206,7 @@ function remove(name) {
 }
 
 function rename(name) {
-  var next = prompt("new name for '" + name + "':", name);
+  var next = prompt("New designation for '" + name + "':", name);
   if (!next || next === name) return;
   api("/api/move", {
     method: "POST",
@@ -193,7 +220,8 @@ function rename(name) {
 }
 
 function alertErr(err) {
-  alert("!!! ERROR !!!\n\n" + err.message);
+  sysmsg("fault // " + err.message);
+  alert("FAULT: " + err.message);
 }
 
 $("btn-up").addEventListener("click", function () {
@@ -207,8 +235,8 @@ $("btn-up").addEventListener("click", function () {
 $("btn-refresh").addEventListener("click", function () { loadFiles(); loadDrives(); });
 
 $("btn-newfolder").addEventListener("click", function () {
-  if (!state.drive) return alert("pick a drive first!!");
-  var name = prompt("name 4 ur new folder:");
+  if (!state.drive) return alert("Select a volume first.");
+  var name = prompt("New directory name:");
   if (!name) return;
   api("/api/mkdir", {
     method: "POST",
@@ -218,13 +246,14 @@ $("btn-newfolder").addEventListener("click", function () {
 });
 
 $("btn-upload").addEventListener("click", function () {
-  if (!state.drive) return alert("pick a drive first!!");
+  if (!state.drive) return alert("Select a volume first.");
   $("file-input").click();
 });
 
 $("file-input").addEventListener("change", function () {
   var files = Array.prototype.slice.call($("file-input").files);
   if (!files.length) return;
+  sysmsg("receiving " + files.length + " file(s)");
   var done = 0;
   files.forEach(function (file) {
     var form = new FormData();
@@ -244,14 +273,14 @@ $("file-input").addEventListener("change", function () {
   $("file-input").value = "";
 });
 
-/* ============ peers ============ */
+/* ============ network ============ */
 
 function loadPeers() {
   api("/api/status").then(function (st) {
     var box = $("peer-list");
     if (!st.peers.length) {
-      box.innerHTML = '<div class="peer"><span class="blink">*</span> no other jio machines found on ur LAN... yet. ' +
-        "fire up jio on another computer and it will show up here automagically!</div>";
+      box.innerHTML = '<div class="dim">NO REMOTE UNITS ON BROADCAST CHANNEL. ' +
+        "START JIO ON ANOTHER MACHINE AND IT WILL REGISTER HERE.</div>";
       return;
     }
     box.innerHTML = "";
@@ -259,16 +288,16 @@ function loadPeers() {
       var div = document.createElement("div");
       div.className = "peer";
       div.innerHTML =
-        '<div class="peer-name">&#128225; ' + esc(peer.name) + "</div>" +
-        "<div>addr ..... " + esc(peer.ip) + ":" + peer.port + "</div>" +
-        "<div>mode ..... " + (peer.host_mode ? "HOST" : "node") + "</div>" +
-        "<div>status ... <span class='c-green'>ONLINE</span></div>";
+        '<div class="peer-name">' + esc(peer.name.toUpperCase()) + "</div>" +
+        '<div class="peer-row"><span>ADDR</span><span>' + esc(peer.ip) + ":" + peer.port + "</span></div>" +
+        '<div class="peer-row"><span>MODE</span><span>' + (peer.host_mode ? "HOST" : "NODE") + "</span></div>" +
+        '<div class="peer-row"><span>STATE</span><span class="peer-online">ONLINE</span></div>';
       box.appendChild(div);
     });
   });
 }
 
-/* ============ settings ============ */
+/* ============ config ============ */
 
 function loadSettings() {
   api("/api/settings").then(function (st) {
@@ -289,22 +318,18 @@ $("btn-save").addEventListener("click", function () {
       extra_paths: extra,
     }),
   }).then(function () {
-    $("save-msg").textContent = "SAVED!! ur settings r locked in B)";
+    $("save-msg").textContent = "PARAMETERS COMMITTED";
     setTimeout(function () { $("save-msg").textContent = ""; }, 4000);
     loadStatus();
     loadDrives();
   }).catch(alertErr);
 });
 
-/* ============ hit counter (100% authentic fake) ============ */
-
-var hits = parseInt(localStorage.getItem("jio-hits") || "31337", 10) + 1;
-localStorage.setItem("jio-hits", String(hits));
-$("counter").textContent = String(hits).padStart(6, "0");
-
 /* ============ boot ============ */
 
 loadStatus();
 loadDrives();
 showView("files");
+tickClock();
+setInterval(tickClock, 1000);
 setInterval(loadStatus, 10000);

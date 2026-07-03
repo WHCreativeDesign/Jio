@@ -3,139 +3,142 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>..::JiO::.. yOuR hOmE nEtWoRk DrIvE</title>
+<title>JIO // STORAGE CONSOLE</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<div id="stars"></div>
+<div id="scanlines"></div>
 
 <div id="page">
-  <!-- ============ HEADER ============ -->
-  <div id="header">
-    <div id="logo">
-      <span class="orb-mini"></span>
-      <h1 class="logo-text">jio<span class="logo-reg">&reg;</span></h1>
+  <!-- ============ MASTHEAD ============ -->
+  <header id="masthead">
+    <div id="wordmark">
+      <span class="wordmark-text">JIO</span>
+      <span class="wordmark-stripes"><i></i><i></i><i></i></span>
+      <span class="wordmark-sub">DOMESTIC STORAGE SYSTEM</span>
     </div>
-    <div id="welcome-banner">
-      <div class="banner-title"><span class="c-yellow">Welcome to</span> <span class="c-green">Jio</span> <span class="c-yellow">NAS!!</span></div>
-      <div class="banner-sub">your files. your network. the future is NOW.</div>
+    <div id="readout">
+      <div class="readout-row"><span class="readout-key">UNIT</span><span class="readout-val" id="device-name">-----</span></div>
+      <div class="readout-row"><span class="readout-key">MODE</span><span class="readout-val" id="mode-tag">-----</span></div>
+      <div class="readout-row"><span class="readout-key">LINK</span><span class="readout-val"><span class="lamp" id="led"></span><span id="link-state">SEEK</span></span></div>
     </div>
-    <div id="status-box">
-      <div class="led" id="led"></div>
-      <div id="device-name">connecting...</div>
-      <div id="mode-tag">...</div>
-    </div>
+  </header>
+
+  <div id="sysline">
+    <span class="sysline-label">SYS</span>
+    <span id="sysmsg">STANDBY // AWAITING DRIVE SELECTION</span>
+    <span class="cursor">&#9608;</span>
   </div>
 
-  <marquee id="ticker" scrollamount="4">*** WELCOME TO JIO v0.1 *** THE ULTIMATE HOME STORAGE EXPERIENCE *** BEST VIEWED AT 800x600 *** UPLOAD!! DOWNLOAD!! SHARE!! *** SIGN THE GUESTBOOK (coming soon) *** THANK YOU FOR VISITING ***</marquee>
-
-  <!-- ============ ORB NAV ============ -->
-  <div id="orbnav">
-    <a class="orbbtn" href="#" data-view="files"><span class="orb"></span><span class="orblabel">my.files</span></a>
-    <a class="orbbtn" href="#" data-view="peers"><span class="orb orb-green"></span><span class="orblabel">the.network</span></a>
-    <a class="orbbtn" href="#" data-view="settings"><span class="orb orb-orange"></span><span class="orblabel">set.tings</span></a>
-  </div>
+  <!-- ============ MODE KEYS ============ -->
+  <nav id="modekeys">
+    <button class="modekey" data-view="files"><span class="modekey-lamp"></span>FILES</button>
+    <button class="modekey" data-view="peers"><span class="modekey-lamp"></span>NETWORK</button>
+    <button class="modekey" data-view="settings"><span class="modekey-lamp"></span>CONFIG</button>
+  </nav>
 
   <div id="main">
-    <!-- ============ DRIVES SIDEBAR ============ -->
-    <div id="sidebar">
-      <div class="panel">
-        <div class="panel-title">&raquo; dRiVeS &laquo;</div>
-        <div id="drive-list" class="panel-body"><span class="blink">loading...</span></div>
-      </div>
-      <div class="panel">
-        <div class="panel-title">&raquo; hit counter &laquo;</div>
-        <div class="panel-body counter-wrap">
-          <span id="counter" class="counter">000000</span>
-          <div class="counter-caption">visitors since 1999</div>
+    <!-- ============ SIDEBAR ============ -->
+    <aside id="sidebar">
+      <section class="module">
+        <div class="module-head">VOLUMES</div>
+        <div id="drive-list" class="module-body">
+          <div class="dim">scanning&hellip;</div>
         </div>
-      </div>
-      <div class="panel">
-        <div class="panel-body construction">
-          <span class="construction-icon">&#9888;</span>
-          <span class="blink c-yellow">UNDER CONSTRUCTION</span>
-          <span class="construction-icon">&#9888;</span>
+      </section>
+      <section class="module">
+        <div class="module-head">TELEMETRY</div>
+        <div class="module-body telemetry">
+          <div class="tele-row"><span>SW REV</span><span id="tele-version">-.-.-</span></div>
+          <div class="tele-row"><span>PEERS</span><span id="tele-peers">0</span></div>
+          <div class="tele-row"><span>VOLUMES</span><span id="tele-drives">0</span></div>
+          <div class="tele-row"><span>CLOCK</span><span id="tele-clock">--:--:--</span></div>
         </div>
+      </section>
+      <div class="plate">
+        <span>MODEL JIO-1</span>
+        <span>SER NO 000451</span>
+        <span>MADE FOR THE HOME OF TOMORROW</span>
       </div>
-    </div>
+    </aside>
 
     <!-- ============ CONTENT ============ -->
     <div id="content">
 
       <!-- FILES VIEW -->
       <div id="view-files" class="view">
-        <div class="panel">
-          <div class="panel-title-bar">
-            <span id="crumbs">select a drive to begin...</span>
+        <section class="module">
+          <div class="module-head module-head-split">
+            <span>DIRECTORY</span>
+            <span id="crumbs" class="crumbs">NO VOLUME</span>
           </div>
           <div class="toolbar">
-            <button class="btn95" id="btn-up">&#8679; Up</button>
-            <button class="btn95" id="btn-refresh">&#8635; Refresh</button>
-            <button class="btn95" id="btn-newfolder">&#128193; New Folder</button>
-            <button class="btn95" id="btn-upload">&#11014; Upload!!</button>
+            <button class="key" id="btn-up">UP</button>
+            <button class="key" id="btn-refresh">RESCAN</button>
+            <span class="toolbar-gap"></span>
+            <button class="key" id="btn-newfolder">NEW DIR</button>
+            <button class="key key-accent" id="btn-upload">UPLOAD</button>
             <input type="file" id="file-input" multiple style="display:none">
           </div>
           <table id="file-table" cellspacing="0">
             <thead>
-              <tr><th>name</th><th>size</th><th>modified</th><th>actions</th></tr>
+              <tr><th>NAME</th><th>SIZE</th><th>MODIFIED</th><th>OPS</th></tr>
             </thead>
             <tbody id="file-rows">
-              <tr><td colspan="4" class="empty-msg">&lt;&lt; no drive selected &gt;&gt;</td></tr>
+              <tr><td colspan="4" class="empty-msg">NO VOLUME SELECTED</td></tr>
             </tbody>
           </table>
-        </div>
+        </section>
       </div>
 
       <!-- PEERS VIEW -->
       <div id="view-peers" class="view" style="display:none">
-        <div class="panel">
-          <div class="panel-title-bar">the.network :: other jio machines on your LAN</div>
-          <div class="panel-body" id="peer-list">scanning the information superhighway...</div>
-        </div>
+        <section class="module">
+          <div class="module-head">NETWORK // REMOTE UNITS</div>
+          <div class="module-body" id="peer-list"><div class="dim">listening on broadcast channel&hellip;</div></div>
+        </section>
       </div>
 
       <!-- SETTINGS VIEW -->
       <div id="view-settings" class="view" style="display:none">
-        <div class="panel">
-          <div class="panel-title-bar">set.tings :: configure ur jio</div>
-          <div class="panel-body">
-            <table class="settings-table">
-              <tr>
-                <td class="setting-label">device name:</td>
-                <td><input type="text" id="set-name" class="input95" maxlength="64"></td>
-              </tr>
-              <tr>
-                <td class="setting-label">host mode:</td>
-                <td>
-                  <label><input type="checkbox" id="set-host"> <span class="c-green">ENABLE</span>
-                  <span class="setting-hint">(merge every drive on the network into ONE MEGA DRIVE)</span></label>
-                </td>
-              </tr>
-              <tr>
-                <td class="setting-label">extra folders:</td>
-                <td><textarea id="set-extra" class="input95" rows="3" placeholder="/path/to/share (one per line)"></textarea></td>
-              </tr>
-            </table>
-            <button class="btn95 btn-save" id="btn-save">&#128190; SAVE SETTINGS</button>
-            <span id="save-msg" class="c-green"></span>
+        <section class="module">
+          <div class="module-head">CONFIG // UNIT PARAMETERS</div>
+          <div class="module-body">
+            <div class="field">
+              <label class="field-label" for="set-name">UNIT DESIGNATION</label>
+              <input type="text" id="set-name" class="field-input" maxlength="64" spellcheck="false">
+            </div>
+            <div class="field">
+              <span class="field-label">HOST MODE</span>
+              <label class="switch">
+                <input type="checkbox" id="set-host">
+                <span class="switch-track"><span class="switch-thumb"></span></span>
+                <span class="switch-caption">AGGREGATE ALL NETWORK VOLUMES ON THIS UNIT</span>
+              </label>
+            </div>
+            <div class="field">
+              <label class="field-label" for="set-extra">AUXILIARY PATHS <span class="dim">(one per line)</span></label>
+              <textarea id="set-extra" class="field-input" rows="3" spellcheck="false" placeholder="/path/to/share"></textarea>
+            </div>
+            <div class="field">
+              <button class="key key-accent" id="btn-save">COMMIT</button>
+              <span id="save-msg" class="ok-msg"></span>
+            </div>
           </div>
-        </div>
+        </section>
       </div>
 
     </div>
   </div>
 
   <!-- ============ FOOTER ============ -->
-  <div id="footer">
-    <div class="badges">
-      <span class="badge badge-a">JIO v0.1</span>
-      <span class="badge badge-b">800x600 READY</span>
-      <span class="badge badge-c">100% HTML</span>
-      <span class="badge badge-d">NO COOKIES!</span>
-    </div>
-    <div class="footer-url">http://www.jio.local</div>
-    <div class="footer-copy">&copy;1999-2026 jio industries. all rites reserved. made with notepad.exe</div>
-  </div>
+  <footer id="footer">
+    <span>JIO STORAGE CONSOLE</span>
+    <span class="footer-sep">//</span>
+    <span>FOR INDOOR USE ONLY</span>
+    <span class="footer-sep">//</span>
+    <span>NO USER-SERVICEABLE PARTS INSIDE</span>
+  </footer>
 </div>
 
 <script src="/static/app.js"></script>

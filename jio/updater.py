@@ -25,6 +25,24 @@ def _err_text(exc):
     return stderr.strip() if stderr else str(exc)
 
 
+def _close_inherited_fds():
+    try:
+        fds = os.listdir("/proc/self/fd")
+    except OSError:
+        return
+    for entry in fds:
+        try:
+            fd = int(entry)
+        except ValueError:
+            continue
+        if fd <= 2:
+            continue
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+
 class Updater:
     def __init__(self, get_config):
         self._get_config = get_config
@@ -157,6 +175,9 @@ class Updater:
 
     def _restart(self):
         os.chdir(REPO_ROOT)
+        # The listening socket (and any open client connections) survive
+        # execv otherwise, so the new process fails to bind the same port.
+        _close_inherited_fds()
         os.execv(sys.executable, [sys.executable, "-m", "jio"])
 
     def _loop(self):

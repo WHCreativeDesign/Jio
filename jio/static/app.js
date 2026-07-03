@@ -352,6 +352,7 @@ function showBanner(text, cls, hideAfter) {
 function setUpdateLamp(pending) {
   var lamp = document.querySelector('.modekey[data-view="settings"] .modekey-lamp');
   if (lamp) lamp.classList.toggle("pending", !!pending);
+  $("global-update-lamp").classList.toggle("pending", !!pending);
 }
 
 function handleUpdateEvent(msg) {
@@ -401,25 +402,40 @@ function connectUpdateChannel() {
   };
 }
 
+function renderUpdateStatus(st) {
+  $("upd-current").textContent = st.current ? st.current.slice(0, 8).toUpperCase() : "N/A";
+  $("upd-latest").textContent = st.latest ? st.latest.slice(0, 8).toUpperCase() : "-------";
+  $("upd-status").textContent = st.error ? "ERROR" : (st.update_available ? "UPDATE AVAILABLE" : "UP TO DATE");
+  $("upd-checked").textContent = st.last_checked ? fmtDate(st.last_checked) : "NEVER";
+  setUpdateLamp(st.update_available);
+  return st;
+}
+
 function loadUpdateStatus() {
   return api("/api/update/status").then(function (st) {
-    $("upd-current").textContent = st.current ? st.current.slice(0, 8).toUpperCase() : "N/A";
-    $("upd-latest").textContent = st.latest ? st.latest.slice(0, 8).toUpperCase() : "-------";
-    $("upd-status").textContent = st.error ? "ERROR" : (st.update_available ? "UPDATE AVAILABLE" : "UP TO DATE");
-    $("upd-checked").textContent = st.last_checked ? fmtDate(st.last_checked) : "NEVER";
     $("set-autoupdate").checked = !!st.auto_update;
     $("btn-apply-update").disabled = !st.enabled;
-    setUpdateLamp(st.update_available);
-    return st;
+    return renderUpdateStatus(st);
   }).catch(function (err) {
     $("upd-status").textContent = "ERROR: " + err.message.toUpperCase();
   });
 }
 
-$("btn-check-update").addEventListener("click", function () {
+function checkForUpdates() {
   sysmsg("checking github for updates");
-  api("/api/update/check", { method: "POST" }).then(loadUpdateStatus).catch(alertErr);
-});
+  return api("/api/update/check", { method: "POST" }).then(function (st) {
+    renderUpdateStatus(st);
+    if (st.error) {
+      sysmsg("update check failed: " + st.error);
+    } else {
+      sysmsg(st.update_available ? "update available (" + (st.latest || "").slice(0, 8) + ")" : "software up to date");
+    }
+    return st;
+  }).catch(alertErr);
+}
+
+$("btn-check-update").addEventListener("click", checkForUpdates);
+$("btn-check-update-global").addEventListener("click", checkForUpdates);
 
 $("btn-apply-update").addEventListener("click", function () {
   if (!confirm("Install the latest update now?\nThe system will restart when finished.")) return;

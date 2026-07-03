@@ -89,6 +89,12 @@ body {
   padding: 6px 10px;
   min-width: 210px;
 }
+
+#btn-check-update-global {
+  display: inline-flex; align-items: center; gap: 8px;
+  align-self: center;
+}
+#btn-check-update-global .modekey-lamp { width: 7px; height: 7px; }
 .readout-row { display: flex; justify-content: space-between; gap: 14px; font-size: 13px; }
 .readout-key { color: var(--dim); letter-spacing: 2px; }
 .readout-val { color: var(--amber); text-align: right; }

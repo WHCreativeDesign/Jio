@@ -82,12 +82,19 @@ class Updater:
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
             return None
 
+    def _fetch_branch(self, branch, timeout=60):
+        self._git("fetch", "origin", branch, timeout=timeout)
+
     def _remote_commit(self, branch):
-        result = self._git("ls-remote", "origin", "refs/heads/%s" % branch, timeout=20)
-        line = result.stdout.strip().splitlines()
-        if not line:
-            raise RuntimeError("branch '%s' not found on remote" % branch)
-        return line[0].split()[0]
+        return self._git("rev-parse", "origin/%s" % branch).stdout.strip()
+
+    def _is_ahead(self, current, latest):
+        """True when latest is a fast-forward descendant of current."""
+        try:
+            self._git("merge-base", "--is-ancestor", current, latest, timeout=15)
+            return True
+        except subprocess.CalledProcessError:
+            return False
 
     # -- public API -------------------------------------------------------
 
@@ -112,14 +119,20 @@ class Updater:
             return self.status()
         branch = self._get_config().get("update_branch", "main")
         try:
+            self._fetch_branch(branch)
             self.latest_sha = self._remote_commit(branch)
             self.error = None
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, RuntimeError, OSError) as exc:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
             self.error = _err_text(exc)
             self.update_available = False
             return self.status()
         current = self.current_commit()
-        self.update_available = bool(current and self.latest_sha and current != self.latest_sha)
+        # Only a fast-forward counts as an update — a diverged or ahead
+        # checkout must never be silently reset backwards or sideways.
+        self.update_available = bool(
+            current and self.latest_sha and current != self.latest_sha
+            and self._is_ahead(current, self.latest_sha)
+        )
         return self.status()
 
     def apply(self):
@@ -149,7 +162,7 @@ class Updater:
 
         events.broadcast("update_downloading", sha=self.latest_sha[:8])
         try:
-            self._git("fetch", "origin", branch, timeout=60)
+            self._fetch_branch(branch)
             self._git("reset", "--hard", "origin/%s" % branch, timeout=30)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             self.error = _err_text(exc)

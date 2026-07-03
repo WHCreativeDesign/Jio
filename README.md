@@ -6,8 +6,9 @@ network storage that everyone in the house can browse from a web page —
 upload, download, rename, delete, make folders. No client software needed;
 the only install is on the Pi.
 
-The web UI is lovingly styled after turn-of-the-millennium web design.
-Best viewed at 800x600. 😉
+The web UI is styled as a retro-futuristic storage console — amber
+phosphor, instrument panels, and telemetry readouts — and works on
+phones as well as desktops.
 
 ## How it works
 

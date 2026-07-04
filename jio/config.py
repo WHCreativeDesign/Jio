@@ -33,6 +33,10 @@ def _defaults():
         "extra_paths": [],
         # Where "internal storage" points. On a Pi this is the SD card.
         "internal_root": os.path.expanduser("~"),
+        # Self-update: track this branch of the git remote named "origin".
+        "auto_update": False,
+        "update_branch": "main",
+        "update_check_interval": 1800,
     }
 
 

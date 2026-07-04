@@ -53,7 +53,7 @@ function showView(name) {
     btn.classList.toggle("active", btn.dataset.view === name);
   });
   if (name === "peers") loadPeers();
-  if (name === "settings") loadSettings();
+  if (name === "settings") { loadSettings(); loadUpdateStatus(); }
 }
 
 document.querySelectorAll(".modekey").forEach(function (btn) {
@@ -325,11 +325,139 @@ $("btn-save").addEventListener("click", function () {
   }).catch(alertErr);
 });
 
+/* ============ self-update ============ */
+
+var UPDATE_MESSAGES = {
+  update_checking: "CHECKING GITHUB FOR UPDATES",
+  update_available: "UPDATE AVAILABLE",
+  update_none: "SOFTWARE UP TO DATE",
+  update_downloading: "PULLING UPDATE FROM GITHUB",
+  update_installing: "INSTALLING DEPENDENCIES",
+  update_restarting: "RESTARTING SYSTEM",
+  update_error: "UPDATE FAILED",
+};
+
+var banner = $("update-banner");
+
+function showBanner(text, cls, hideAfter) {
+  banner.textContent = text;
+  banner.className = "show" + (cls ? " " + cls : "");
+  if (hideAfter) {
+    setTimeout(function () {
+      if (banner.textContent === text) banner.className = "";
+    }, hideAfter);
+  }
+}
+
+function setUpdateLamp(pending) {
+  var lamp = document.querySelector('.modekey[data-view="settings"] .modekey-lamp');
+  if (lamp) lamp.classList.toggle("pending", !!pending);
+  $("global-update-lamp").classList.toggle("pending", !!pending);
+}
+
+function handleUpdateEvent(msg) {
+  var text = UPDATE_MESSAGES[msg.type];
+  if (!text) return;
+  if (msg.type === "update_error") {
+    showBanner(text + ": " + (msg.message || "unknown error").toUpperCase(), "danger", 8000);
+    return;
+  }
+  if (msg.type === "update_none") {
+    showBanner(text, "ok", 3000);
+    setUpdateLamp(false);
+    return;
+  }
+  if (msg.type === "update_available") {
+    showBanner(text + " (" + (msg.sha || "").toUpperCase() + ")", "", 6000);
+    setUpdateLamp(true);
+    return;
+  }
+  showBanner(text, "");
+  if (msg.type === "update_restarting") waitForRestart();
+}
+
+function waitForRestart() {
+  var tries = 0;
+  var poll = setInterval(function () {
+    tries += 1;
+    fetch("/api/status").then(function (r) {
+      if (!r.ok) throw new Error();
+      return r.json();
+    }).then(function () {
+      clearInterval(poll);
+      showBanner("UPDATE COMPLETE // RELOADING", "ok");
+      setTimeout(function () { window.location.reload(); }, 1200);
+    }).catch(function () {
+      if (tries > 150) clearInterval(poll); // ~5 min ceiling
+    });
+  }, 2000);
+}
+
+function connectUpdateChannel() {
+  var source = new EventSource("/api/events");
+  source.onmessage = function (ev) {
+    try {
+      handleUpdateEvent(JSON.parse(ev.data));
+    } catch (e) { /* ignore malformed event */ }
+  };
+}
+
+function renderUpdateStatus(st) {
+  $("upd-current").textContent = st.current ? st.current.slice(0, 8).toUpperCase() : "N/A";
+  $("upd-latest").textContent = st.latest ? st.latest.slice(0, 8).toUpperCase() : "-------";
+  $("upd-status").textContent = st.error ? "ERROR" : (st.update_available ? "UPDATE AVAILABLE" : "UP TO DATE");
+  $("upd-checked").textContent = st.last_checked ? fmtDate(st.last_checked) : "NEVER";
+  setUpdateLamp(st.update_available);
+  return st;
+}
+
+function loadUpdateStatus() {
+  return api("/api/update/status").then(function (st) {
+    $("set-autoupdate").checked = !!st.auto_update;
+    $("btn-apply-update").disabled = !st.enabled;
+    return renderUpdateStatus(st);
+  }).catch(function (err) {
+    $("upd-status").textContent = "ERROR: " + err.message.toUpperCase();
+  });
+}
+
+function checkForUpdates() {
+  sysmsg("checking github for updates");
+  return api("/api/update/check", { method: "POST" }).then(function (st) {
+    renderUpdateStatus(st);
+    if (st.error) {
+      sysmsg("update check failed: " + st.error);
+    } else {
+      sysmsg(st.update_available ? "update available (" + (st.latest || "").slice(0, 8) + ")" : "software up to date");
+    }
+    return st;
+  }).catch(alertErr);
+}
+
+$("btn-check-update").addEventListener("click", checkForUpdates);
+$("btn-check-update-global").addEventListener("click", checkForUpdates);
+
+$("btn-apply-update").addEventListener("click", function () {
+  if (!confirm("Install the latest update now?\nThe system will restart when finished.")) return;
+  api("/api/update/apply", { method: "POST" }).catch(alertErr);
+});
+
+$("set-autoupdate").addEventListener("change", function () {
+  api("/api/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ auto_update: $("set-autoupdate").checked }),
+  }).catch(alertErr);
+});
+
 /* ============ boot ============ */
 
 loadStatus();
 loadDrives();
 showView("files");
 tickClock();
+connectUpdateChannel();
+loadUpdateStatus();
 setInterval(tickClock, 1000);
 setInterval(loadStatus, 10000);
+setInterval(loadUpdateStatus, 60000);

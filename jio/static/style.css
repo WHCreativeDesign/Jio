@@ -38,6 +38,19 @@ body {
 
 #page { max-width: 1080px; margin: 0 auto; padding: 14px 14px 40px; }
 
+/* ============ update banner ============ */
+#update-banner {
+  display: none;
+  position: sticky; top: 0; z-index: 20;
+  background: var(--amber); color: var(--bg);
+  font-family: var(--head); letter-spacing: 3px; font-size: 13px;
+  text-align: center; padding: 8px 14px;
+  border-bottom: 2px solid var(--amber-dim);
+}
+#update-banner.show { display: block; }
+#update-banner.danger { background: var(--red); border-color: #7a1c0c; color: #1a0b06; }
+#update-banner.ok { background: var(--green); border-color: #1f5c33; color: #06210f; }
+
 .dim { color: var(--dim); }
 
 /* ============ masthead ============ */
@@ -76,6 +89,12 @@ body {
   padding: 6px 10px;
   min-width: 210px;
 }
+
+#btn-check-update-global {
+  display: inline-flex; align-items: center; gap: 8px;
+  align-self: center;
+}
+#btn-check-update-global .modekey-lamp { width: 7px; height: 7px; }
 .readout-row { display: flex; justify-content: space-between; gap: 14px; font-size: 13px; }
 .readout-key { color: var(--dim); letter-spacing: 2px; }
 .readout-val { color: var(--amber); text-align: right; }
@@ -124,6 +143,7 @@ body {
 .modekey-lamp { width: 7px; height: 7px; background: #46483c; }
 .modekey.active { color: var(--amber); border-color: var(--amber-dim); }
 .modekey.active .modekey-lamp { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+.modekey-lamp.pending { background: var(--red); box-shadow: 0 0 6px var(--red); animation: pulse 1s steps(2, start) infinite; }
 
 /* ============ layout ============ */
 #main { display: flex; gap: 14px; align-items: flex-start; }

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JIO</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0f14'/%3E%3Crect x='10' y='20' width='18' height='24' rx='6' fill='%2338f2ff'/%3E%3Crect x='36' y='20' width='18' height='24' rx='6' fill='%2338f2ff'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <section id="gate" class="gate">
+    <div class="gate-card">
+      <div class="gate-logo">
+        <canvas id="gate-eyes" width="220" height="110"></canvas>
+      </div>
+      <h1 class="wordmark">JIO</h1>
+      <p class="gate-sub">enter pin</p>
+      <div class="pin-dots" id="pin-dots">
+        <span></span><span></span><span></span><span></span>
+      </div>
+      <div class="keypad" id="keypad">
+        <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+        <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+        <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+        <button data-k="del" class="key-ghost">⌫</button><button data-k="0">0</button><button data-k="ok" class="key-ghost">→</button>
+      </div>
+      <input id="pin-hidden" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" aria-label="PIN">
+    </div>
+  </section>
+
+  <main id="app" class="app" hidden>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark"></span>
+        <span class="wordmark small">JIO</span>
+        <span class="tag">eye lab</span>
+      </div>
+      <div class="topbar-right">
+        <label class="toggle"><input type="checkbox" id="track" checked><span>track cursor</span></label>
+        <label class="toggle"><input type="checkbox" id="autoblink" checked><span>auto blink</span></label>
+        <label class="toggle"><input type="checkbox" id="idle"><span>idle wander</span></label>
+        <button id="lock" class="btn-ghost">lock</button>
+      </div>
+    </header>
+
+    <section class="stage-wrap">
+      <div class="stage" id="stage">
+        <canvas id="eyes"></canvas>
+        <div class="stage-label" id="stage-label">neutral</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>expressions</h2>
+        <div class="palette" id="palette">
+          <button data-c="#38f2ff" style="--c:#38f2ff" class="on"></button>
+          <button data-c="#7cf5a0" style="--c:#7cf5a0"></button>
+          <button data-c="#ffd166" style="--c:#ffd166"></button>
+          <button data-c="#ff6b9d" style="--c:#ff6b9d"></button>
+          <button data-c="#b48cff" style="--c:#b48cff"></button>
+          <button data-c="#ffffff" style="--c:#ffffff"></button>
+        </div>
+      </div>
+      <div class="grid" id="grid"></div>
+      <div class="panel-foot">
+        <button id="tour" class="btn">play tour</button>
+        <span class="hint">press 1–9 / letters to jump · space = blink · click stage = surprise</span>
+      </div>
+    </section>
+  </main>
+
+  <script src="js/eyes.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

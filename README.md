@@ -4,7 +4,11 @@ Geometric, clean, futuristic, playful personal agent.
 
 This repo currently holds the **eye lab** — a static demo of JIO's expressive eyes, in the lineage of Anki Vector / Cozmo / EMO.
 
-## Run
+## Live
+
+Deployed to GitHub Pages on every push to `main` (`.github/workflows/pages.yml`).
+
+## Run locally
 
 Any static server works:
 

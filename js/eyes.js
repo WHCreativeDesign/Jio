@@ -203,9 +203,11 @@
           roundRect(ctx, -w / 2, -h / 2, w, h, p.r.map(r => r * Math.min(w, h) / 2));
           ctx.fill();
           if (fx === 'scan') {
-            const sx = -w / 2 + ((ft * 1.4) % 1) * w;
-            ctx.fillStyle = '#fff';
-            ctx.fillRect(sx - w * 0.03, -h, w * 0.06, h * 2);
+            // cut the sweep out rather than painting over — the eye is already solid colour
+            const sx = -w / 2 + ((ft * 1.1) % 1.3 - 0.15) * w;
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.fillRect(sx - w * 0.06, -h, w * 0.12, h * 2);
+            ctx.globalCompositeOperation = 'source-over';
           }
           if (fx === 'orbit') {
             ctx.globalCompositeOperation = 'destination-out';

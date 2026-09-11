@@ -113,7 +113,8 @@
       clearTimeout(this._reactT);
       this._reactT = setTimeout(() => this.eyes.set(this.mood = prev), ms);
     }
-    think() { this.busy = true; clearTimeout(this._reactT); this.set('thinking'); }
+    /* Working on it: a scanning sweep reads as doing something, not just pondering. */
+    work() { this.busy = true; clearTimeout(this._reactT); this.set('scanning'); }
     done(ok = true) { this.busy = false; this.set('neutral'); this.react(ok ? 'happy' : 'sad', 1400); }
   }
 

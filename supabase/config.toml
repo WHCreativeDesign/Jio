@@ -1,0 +1,5 @@
+project_id = "rgaanykfytfnxksxaiez"
+
+[functions.chat]
+# the bearer token is verified inside the function so CORS preflight can succeed
+verify_jwt = false

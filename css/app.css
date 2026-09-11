@@ -303,13 +303,17 @@ canvas { display: block; }
 .canvas-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--fg-3); font-family: var(--serif); font-size: 19px; padding: 24px; text-align: center; }
 
 /* ---------- mascot ---------- */
+/* Just the eyes — no bounding box. The div still tracks the slot's position/size
+   (for the morph-to-message animation) but paints nothing itself; overflow is
+   visible so a "judge" reaction can balloon past its slot's bounds. */
 .mascot {
-  position: absolute; left: 0; top: 0; width: 66px; height: 42px; border-radius: 14px;
-  background: #000; z-index: 5; cursor: pointer; overflow: hidden; will-change: transform, width, height;
+  position: absolute; left: 0; top: 0; width: 66px; height: 42px;
+  z-index: 5; cursor: pointer; will-change: transform, width, height;
 }
 .mascot canvas {
   position: absolute; left: 50%; top: 50%; width: 64px; height: 40px;
   transform: translate(-50%, -50%); transform-origin: center; will-change: transform;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.28));
 }
 
 /* ---------- morph transitions ---------- */

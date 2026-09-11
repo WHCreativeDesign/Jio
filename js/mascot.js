@@ -66,11 +66,17 @@
 
     /* Glide to a slot. Previous slot gets its static mark back. */
     moveTo(slot, animate = true) {
-      // a hidden target (display:none, or an ancestor that is) has no sensible
-      // rect to fly to — measuring it collapses the mascot to a zero-size point
-      if (!slot || slot.offsetParent === null) return;
+      if (!slot) return;
       if (this.slot && this.slot !== slot) this.slot.classList.remove('live');
       this.slot = slot; slot.classList.add('live');
+      // A hidden target (display:none, or an ancestor that is) has no sensible
+      // rect to fly to — measuring it collapses the mascot to a zero-size point.
+      // This is the normal case at boot: the app is revealed inside a view
+      // transition, which applies its mutation a frame or two later, so the
+      // greeting isn't on screen yet when the first move is asked for. Keep the
+      // destination and land as soon as it's real.
+      if (slot.offsetParent === null) { this.want = animate; this.land(); return; }
+      this.want = null;
       const tgt = this.measure(slot);
       if (!this.cur || !animate) { this.cur = tgt; this.to = null; this.apply(); return; }
       // start from the on-screen position, so a layout change mid-flight can't teleport the launch point
@@ -83,9 +89,32 @@
       if (!this._judging) this.eyes.blink();
     }
 
+    /* Wait for a slot that isn't on screen yet, then go. Bounded, so a slot
+       that never appears (someone sitting on another view) stops costing frames;
+       sync() picks it up if it shows up later. */
+    land(frames = 240) {
+      if (this._landing) return;
+      this._landing = true;
+      const step = (left) => {
+        if (!this.slot || this.want === null) { this._landing = false; return; }
+        if (this.slot.offsetParent !== null) {
+          this._landing = false;
+          const animate = this.want === true;
+          this.want = null;
+          this.moveTo(this.slot, animate);
+          return;
+        }
+        if (left <= 0) { this._landing = false; return; }
+        requestAnimationFrame(() => step(left - 1));
+      };
+      requestAnimationFrame(() => step(frames));
+    }
+
     /* Layout shifted under us (streaming text, resize): follow without ceremony. */
     sync() {
       if (!this.slot || !this.slot.isConnected || this.slot.offsetParent === null) return;
+      // never got to land at all (boot happened behind a view transition)
+      if (!this.cur) { this.moveTo(this.slot, false); return; }
       const tgt = this.measure(this.slot);
       if (this.to) { this.to = tgt; return; }
       if (!this.cur) { this.cur = tgt; this.apply(); return; }

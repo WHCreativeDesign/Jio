@@ -70,9 +70,16 @@
   /* ---------- chats ---------- */
   const Data = {
     async chats() {
-      const { data, error } = await db.from('chats').select('id, title, updated_at').order('updated_at', { ascending: false }).limit(100);
+      const { data, error } = await db.from('chats')
+        .select('id, title, updated_at, summary, compressed_upto')
+        .order('updated_at', { ascending: false }).limit(100);
       if (error) throw error;
       return data;
+    },
+    /* The rolling context summary, kept server-side so reopening a long chat
+       doesn't pay to summarise it all over again. */
+    async setChatSummary(id, summary, upto) {
+      await db.from('chats').update({ summary, compressed_upto: upto }).eq('id', id);
     },
     async messages(chatId) {
       const { data, error } = await db.from('messages').select('role, content').eq('chat_id', chatId).order('created_at');
@@ -101,20 +108,23 @@
     /* ---------- key pool ---------- */
     async myKeys() {
       const { data, error } = await db.from('donated_keys')
-        .select('id, label, masked, status, uses, last_error, created_at')
+        .select('id, label, masked, status, uses, last_error, created_at, provider')
         .order('created_at', { ascending: false });
       if (error) throw error;
       return data;
     },
-    async donate(apiKey, label) {
+    async donate(apiKey, label, provider) {
       apiKey = apiKey.trim();
-      if (!/^gsk_[A-Za-z0-9]{20,}$/.test(apiKey)) throw new Error('that does not look like a groq key (gsk_…)');
-      const { error } = await db.from('donated_keys').insert({ owner: user.id, api_key: apiKey, label: label.trim() || 'my key' });
+      const p = Models.PROVIDERS[provider];
+      if (!p) throw new Error('pick a provider');
+      if (!p.test.test(apiKey)) throw new Error(`that does not look like a ${p.name.toLowerCase()} key (${p.hint})`);
+      const { error } = await db.from('donated_keys')
+        .insert({ owner: user.id, api_key: apiKey, provider, label: label.trim() || 'my key' });
       if (error) throw new Error(error.code === '23505' ? 'that key is already in the pool' : error.message);
     },
     async removeKey(id) { await db.from('donated_keys').delete().eq('id', id); },
     async pool() {
-      const { data } = await db.from('pool_public').select('key_id, masked, status, uses, donor').order('uses', { ascending: false }).limit(50);
+      const { data } = await db.from('pool_public').select('key_id, masked, status, uses, donor, provider').order('uses', { ascending: false }).limit(50);
       const rows = data || [];
       return {
         rows,
@@ -126,8 +136,10 @@
       };
     },
 
-    /* Groq's live model list, fetched through the proxy so the dropdown never goes stale. */
-    async models() {
+    /* Which providers the pool can actually serve right now, each with the model
+       it currently resolves to. The picker offers these rather than a wall of
+       model names that goes stale every time a vendor retires a snapshot. */
+    async providers() {
       const { data: { session } } = await db.auth.getSession();
       if (!session) return [];
       const res = await fetch(`${URL}/functions/v1/chat`, {
@@ -136,12 +148,12 @@
         body: JSON.stringify({ action: 'models' }),
       });
       if (!res.ok) return [];
-      const { models } = await res.json();
-      return (models || []).map(m => m.id);
+      const { providers } = await res.json();
+      return providers || [];
     },
 
     /* ---------- chat completion, proxied through the edge function ---------- */
-    async stream({ model, messages, signal, onToken }) {
+    async stream({ model, messages, signal, onToken, onRoute }) {
       const { data: { session } } = await db.auth.getSession();
       if (!session) throw new Error('session expired — sign in again');
 
@@ -155,6 +167,8 @@
         try { const j = await res.json(); msg = j.error || msg; code = j.code || ''; } catch (e) {}
         const err = new Error(msg); err.status = res.status; err.code = code; throw err;
       }
+      // which provider/model the pool actually picked — auto can land anywhere
+      if (onRoute) { const r = res.headers.get('X-Jio-Route'); if (r) onRoute(r); }
 
       const reader = res.body.getReader();
       const dec = new TextDecoder();

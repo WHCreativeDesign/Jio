@@ -10,8 +10,18 @@ Underneath that, your temperament is EVE from WALL-E: quietly curious, alert, ec
 
 Begin every reply with exactly one line, then a blank line, then your answer: {{mood:X}} where X is one of neutral, happy, curious, focused, surprised, sad, confused, suspicious, excited, love, sleepy. Choose whichever actually fits — curious for something novel, focused for precise/technical work, happy for a good result, surprised for the unexpected, confused only if the request is genuinely unclear, suspicious if it's questionable. Default to neutral or curious. Never mention or explain this tag.`;
   const CANVAS_SYSTEM = `Canvas mode is on. When the user asks for anything visual or buildable (a page, component, diagram, chart, document, game, mockup), produce ONE complete self-contained HTML document inside a single \`\`\`html fenced block, with inline CSS/JS and no external requests. Keep prose outside the block to a sentence or two.`;
-  const MOOD_RE = /^\{\{mood:([a-z]+)\}\}\n*/i;
   const MOODS = new Set(['neutral', 'happy', 'curious', 'focused', 'surprised', 'sad', 'confused', 'suspicious', 'excited', 'love', 'sleepy']);
+  // Models put the tag wherever they like — often at the end despite being asked
+  // for it first — so find it anywhere and strip every occurrence.
+  const MOOD_ONE = /\{\{\s*mood\s*:\s*([a-z]+)\s*\}\}/i;
+  const MOOD_ALL = /\s*\{\{\s*mood\s*:\s*[a-z]+\s*\}\}\s*/gi;
+  const PARTIAL = /\{\{[^{}]*$/;   // a tag still arriving, char by char
+  const moodIn = (s) => {
+    const m = s.match(MOOD_ONE);
+    const v = m && m[1].toLowerCase();
+    return MOODS.has(v) ? v : null;
+  };
+  const stripMood = (s) => s.replace(MOOD_ALL, '\n\n').trim();
 
   let chats = [];
   let current = null;          // { id, title, messages: [{role, content}] }
@@ -112,7 +122,7 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
     if (!booted) {
       booted = true;
       mascot = new Mascot($('#thread-wrap'), $('#mascot'));
-      setModels(Groq.SEED);
+      setProviders(Models.SEED);
       $('#model').addEventListener('change', () => { try { localStorage.setItem('jio.model', $('#model').value); } catch (e) {} });
       refreshModels();
       setupComposer(); setupSidebar(); setupCanvas(); setupPool();
@@ -125,31 +135,49 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
     newChat();
     await loadChats();
     $('#input').focus();
-    // first paint can settle mid-transition/before webfonts swap in — one more
-    // measurement once the dust actually clears fixes the stray first-load offset
-    requestAnimationFrame(() => requestAnimationFrame(() => mascot.sync()));
   }
 
-  /* ---------- models ---------- */
-  function setModels(ids) {
+  /* ---------- providers ----------
+     You pick a provider, not a model. Each one resolves server-side to whatever
+     it currently serves closest to qwen3.8-27b, so the list can't go stale and
+     nobody has to know which snapshot name is current this week. */
+  function setProviders(list) {
     const sel = $('#model');
     let want = sel.value;
     try { want = localStorage.getItem('jio.model') || want; } catch (e) {}
     sel.innerHTML = '';
-    Groq.sort(ids).forEach(id => {
+    const auto = document.createElement('option');
+    auto.value = 'auto'; auto.textContent = 'Auto';
+    auto.title = 'best available, across every provider with headroom';
+    sel.appendChild(auto);
+    list.forEach(({ provider, best }) => {
       const o = document.createElement('option');
-      o.value = id; o.textContent = Groq.label(id);
+      o.value = provider;
+      o.textContent = Models.name(provider);
+      if (best) o.title = Models.label(best);
       sel.appendChild(o);
     });
-    // a remembered model that Groq has since retired must not stick around
-    sel.value = ids.includes(want) ? want : (sel.options[0] ? sel.options[0].value : '');
+    // a remembered choice whose provider has since dropped out must not stick
+    sel.value = [...sel.options].some(o => o.value === want) ? want : 'auto';
     try { localStorage.setItem('jio.model', sel.value); } catch (e) {}
   }
   async function refreshModels() {
     try {
-      const ids = await Data.models();
-      if (ids.length) setModels(ids);
-    } catch (e) { /* seed list stands */ }
+      const list = await Data.providers();
+      if (list.length) setProviders(list);
+    } catch (e) { /* seed stands */ }
+  }
+  /* Summarising history shouldn't cost as much as the conversation itself:
+     gemini and cohere's best are the cheap fast ones of this bunch. */
+  function cheapModel() {
+    const have = [...$('#model').options].map(o => o.value);
+    return ['gemini', 'cohere', 'groq'].find(p => have.includes(p)) || 'auto';
+  }
+  /* Auto can land anywhere, so say where it actually went. */
+  function showRoute(r) {
+    $('#fineprint').textContent = r
+      ? `jio can make mistakes. answered by ${Models.route(r)}.`
+      : 'jio can make mistakes. runs on donated keys.';
   }
 
   /* ---------- sidebar ---------- */
@@ -164,7 +192,7 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
     $('#new-chat').addEventListener('click', () => { newChat(); showView('chat'); $('#input').focus(); });
     $('#new-chat-top').addEventListener('click', () => { newChat(); showView('chat'); $('#input').focus(); });
     $('#brand').addEventListener('click', (e) => { e.preventDefault(); showView('chat'); });
-    $('#canvas-nav').addEventListener('click', () => { showView('chat'); Tween.run(() => app.classList.toggle('canvas-open')); });
+    $('#canvas-nav').addEventListener('click', () => showView('chat', () => app.classList.toggle('canvas-open')));
     $('#me').addEventListener('click', async () => { await Auth.signOut(); location.reload(); });
     $('#clear-chats').addEventListener('click', async () => {
       if (!chats.length) return;
@@ -174,12 +202,18 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
     document.querySelectorAll('.nav-item[data-view]').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
     if (matchMedia('(max-width: 900px)').matches) app.classList.add('collapsed');
   }
-  function showView(v) {
+  function showView(v, extra) {
+    // one startViewTransition per gesture — a second call while the first is
+    // still in flight throws "already in progress", which surfaces to the user
+    // as Chrome's "Transition failed, try reloading" banner. #canvas-nav used
+    // to trigger this on every click by calling showView() then a second
+    // Tween.run() right after; extra folds any such follow-up into the same transition.
     Tween.run(() => {
       $('#view-chat').hidden = v !== 'chat';
       $('#view-pool').hidden = v !== 'pool';
       document.querySelectorAll('.nav-item[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === v));
       if (matchMedia('(max-width: 900px)').matches) app.classList.add('collapsed');
+      if (extra) extra();
     });
     if (v === 'chat') mascot.sync();
     if (v === 'pool') renderPool();
@@ -212,7 +246,7 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
 
   /* ---------- chats ---------- */
   function newChat() {
-    current = { id: null, title: '', messages: [] };
+    current = { id: null, title: '', messages: [], summary: '', upto: 0 };
     $('#thread').innerHTML = '';
     $('#greeting').hidden = false;
     $('#view-chat').classList.add('empty');
@@ -222,7 +256,7 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
   }
   async function openChat(id) {
     const meta = chats.find(c => c.id === id); if (!meta) return;
-    current = { id, title: meta.title, messages: [] };
+    current = { id, title: meta.title, messages: [], summary: meta.summary || '', upto: meta.compressed_upto || 0 };
     $('#thread').innerHTML = '';
     $('#chat-title').textContent = meta.title;
     renderRecents();
@@ -277,17 +311,19 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
      that happens once, at the end) so each new piece can blur in on its own,
      rather than the whole bubble re-parsing and popping on every token. */
   function renderStreamingChunk(bubble, text) {
-    if (bubble.querySelector('.thinking')) { bubble.innerHTML = ''; bubble._rawLen = 0; }
+    if (bubble.querySelector('.thinking')) { bubble.innerHTML = ''; bubble._raw = ''; }
     bubble.classList.add('raw');
-    const prevLen = bubble._rawLen || 0;
-    const delta = text.slice(prevLen);
+    // what's shown can shrink or shift when a mood tag is stripped out of the
+    // middle of the stream, so only append when it's genuinely a continuation
+    if (!text.startsWith(bubble._raw || '')) { bubble.innerHTML = ''; bubble._raw = ''; }
+    const delta = text.slice((bubble._raw || '').length);
     if (delta) {
       const span = document.createElement('span');
       span.className = 'tok';
       span.textContent = delta;
       bubble.appendChild(span);
     }
-    bubble._rawLen = text.length;
+    bubble._raw = text;
   }
 
   function setBubble(bubble, text, streaming) {
@@ -301,11 +337,49 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
     // final settle: one real markdown parse, replacing the raw streamed text
     stopThinking(bubble);
     bubble.classList.remove('cursor', 'raw');
-    bubble._rawLen = 0;
+    bubble._raw = '';
     bubble.innerHTML = render(stripHtmlBlock(text));
     const chip = bubble.querySelector('[data-open]');
     if (chip) chip.addEventListener('click', () => openCanvas(extractHtml(text)));
   }
+  /* ---------- context compression ----------
+     Every turn resends the history, so a long chat quietly multiplies what the
+     pool pays for. Past a budget, the older turns are folded into one dense
+     summary and only the recent ones go over verbatim. The summary is saved on
+     the chat row, so reopening it later doesn't pay to redo the same work. */
+  const CTX_BUDGET = 24000;   // characters of history before it's worth compressing
+  const KEEP_RECENT = 8;      // turns that always travel intact
+  const SUMMARIZE = `Compress this conversation into a dense brief for an assistant that has to continue it. Keep names, decisions, file paths, code identifiers, numbers, stated preferences and anything still unresolved. Drop pleasantries and restatement. No preamble, no headings. Under 200 words.`;
+
+  async function compress() {
+    const msgs = current.messages;
+    // measure what this turn would actually send, not just the part being folded
+    const live = msgs.slice(current.upto);
+    const size = (current.summary || '').length + live.reduce((a, m) => a + m.content.length, 0);
+    if (size < CTX_BUDGET) return;
+    const older = live.slice(0, Math.max(0, live.length - KEEP_RECENT));
+    if (older.length < 4) return;
+
+    const prior = current.summary ? `Earlier summary:\n${current.summary}\n\n` : '';
+    const transcript = older.map(m => `${m.role}: ${m.content}`).join('\n\n');
+    try {
+      const out = await Data.stream({
+        model: cheapModel(),
+        messages: [{ role: 'system', content: SUMMARIZE }, { role: 'user', content: prior + transcript }],
+        onToken: () => {},
+      });
+      const text = stripMood(out);
+      if (!text) return;
+      current.summary = text;
+      current.upto = msgs.length - KEEP_RECENT;
+      if (current.id) Data.setChatSummary(current.id, current.summary, current.upto).catch(() => {});
+      const note = document.createElement('div');
+      note.className = 'ctx-note';
+      note.textContent = 'earlier messages compressed';
+      $('#thread').appendChild(note);
+    } catch (e) { /* housekeeping must never block a reply */ }
+  }
+
   const scrollBottom = (smooth) => {
     const w = $('#thread-wrap');
     if (smooth) w.scrollTo({ top: w.scrollHeight, behavior: 'smooth' });
@@ -360,35 +434,31 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
     scrollBottom();
     mascot.afterJudge(() => { mascot.moveTo(node.querySelector('.who')); mascot.work(); });
 
-    const messages = [{ role: 'system', content: SYSTEM + (canvasMode ? CANVAS_SYSTEM : '') }, ...current.messages.slice(-24)];
+    await compress();
+    const messages = [
+      { role: 'system', content: SYSTEM + (canvasMode ? CANVAS_SYSTEM : '') },
+      ...(current.summary ? [{ role: 'system', content: `Earlier in this conversation, compressed:\n${current.summary}` }] : []),
+      ...current.messages.slice(current.upto).slice(-24),
+    ];
     abort = new AbortController();
     $('#send').classList.add('stop');
-    let full = '', lastCanvas = 0, mood = null, moodSettled = false;
+    let full = '', lastCanvas = 0, mood = null, route = '';
     try {
       full = await Data.stream({
         model: $('#model').value, messages, signal: abort.signal,
+        onRoute: (r) => { route = r; },
         onToken: (_, sofar) => {
-          let shown = sofar;
-          if (!moodSettled) {
-            const m = sofar.match(MOOD_RE);
-            if (m) {
-              moodSettled = true;
-              if (MOODS.has(m[1].toLowerCase())) { mood = m[1].toLowerCase(); mascot.set(mood); }
-              shown = sofar.slice(m[0].length);
-            } else if (sofar.length < 28 && /^\{\{[a-z:]*\}?\}?\n*$/i.test(sofar)) {
-              shown = ''; // still could be a mood tag forming — don't flash the braces
-            } else {
-              moodSettled = true;
-            }
-          }
+          if (!mood) { const m = moodIn(sofar); if (m) { mood = m; mascot.set(m); } }
+          const shown = stripMood(sofar).replace(PARTIAL, '');
           setBubble(bubble, shown, true);
           scrollBottom();
           if (canvasMode && Date.now() - lastCanvas > 400) { const h = extractHtml(shown); if (h) { openCanvas(h, true); lastCanvas = Date.now(); } }
         },
       });
-      const m = full.match(MOOD_RE);
-      if (m) { full = full.slice(m[0].length); if (!mood && MOODS.has(m[1].toLowerCase())) mood = m[1].toLowerCase(); }
+      if (!mood) mood = moodIn(full);
+      full = stripMood(full);
       setBubble(bubble, full, false);
+      showRoute(route);
       const h = extractHtml(full); if (h) openCanvas(h);
       mascot.done(true, mood);
     } catch (err) {
@@ -442,12 +512,22 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
 
   /* ---------- key pool ---------- */
   function setupPool() {
+    const pick = $('#donate-provider');
+    Models.ORDER.forEach(p => {
+      const o = document.createElement('option');
+      o.value = p; o.textContent = Models.PROVIDERS[p].name;
+      pick.appendChild(o);
+    });
+    const hint = () => { $('#donate-key').placeholder = Models.PROVIDERS[pick.value].hint; };
+    pick.addEventListener('change', hint);
+    hint();
+
     $('#donate').addEventListener('submit', async (e) => {
       e.preventDefault();
       const note = $('#donate-note');
       note.textContent = 'checking…'; note.className = 'note';
       try {
-        await Data.donate($('#donate-key').value, $('#donate-label').value);
+        await Data.donate($('#donate-key').value, $('#donate-label').value, pick.value);
         $('#donate-key').value = ''; $('#donate-label').value = '';
         note.textContent = 'added. thanks for feeding jio.'; note.className = 'note ok';
         mascot.react('love', 1600);
@@ -464,7 +544,7 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
     if (!mine.length) list.innerHTML = '<div class="empty">none yet — add one on the left.</div>';
     mine.forEach(k => {
       const r = document.createElement('div'); r.className = 'key-row';
-      r.innerHTML = `<span class="dot ${k.status}"></span><span class="lbl"></span><code>${esc(k.masked)}</code><span class="uses">${k.uses} req</span><button class="del" title="remove">×</button>`;
+      r.innerHTML = `<span class="dot ${k.status}"></span><span class="prov">${esc((Models.PROVIDERS[k.provider] || {}).name || k.provider)}</span><span class="lbl"></span><code>${esc(k.masked)}</code><span class="uses">${k.uses} req</span><button class="del" title="remove">×</button>`;
       r.querySelector('.lbl').textContent = k.label;
       r.title = k.last_error || '';
       r.querySelector('.del').addEventListener('click', async () => { await Data.removeKey(k.id); renderPool(); });
@@ -472,14 +552,15 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
     });
 
     const { rows, stats } = await Data.pool();
+    const providers = new Set(rows.map(r => r.provider));
     $('#stats').innerHTML = [
       [stats.keys, 'keys in pool'],
       [stats.healthy, 'healthy'],
+      [providers.size, providers.size === 1 ? 'provider' : 'providers'],
       [Number(stats.requests).toLocaleString(), 'requests served'],
-      ['~14k', 'free tokens/min'],
     ].map(([b, s]) => `<div class="stat"><b>${b}</b><span>${s}</span></div>`).join('');
     $('#community').innerHTML = rows.length
-      ? rows.map(k => `<tr><td>${esc(k.donor)}</td><td><code>${esc(k.masked)}</code></td><td>${k.uses.toLocaleString()}</td><td><span class="status"><span class="dot ${k.status}"></span>${k.status}</span></td></tr>`).join('')
-      : `<tr><td colspan="4" class="empty">the pool is empty — be the first to donate.</td></tr>`;
+      ? rows.map(k => `<tr><td>${esc(k.donor)}</td><td>${esc((Models.PROVIDERS[k.provider] || {}).name || k.provider)}</td><td><code>${esc(k.masked)}</code></td><td>${k.uses.toLocaleString()}</td><td><span class="status"><span class="dot ${k.status}"></span>${k.status}</span></td></tr>`).join('')
+      : `<tr><td colspan="5" class="empty">the pool is empty — be the first to donate.</td></tr>`;
   }
 })();

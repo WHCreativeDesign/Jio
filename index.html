@@ -159,23 +159,24 @@
               </div>
             </div>
           </form>
-          <p class="fineprint">jio can make mistakes. runs on donated groq keys.</p>
+          <p class="fineprint" id="fineprint">jio can make mistakes. runs on donated keys.</p>
         </div>
       </section>
 
       <section class="view view-pool" id="view-pool" hidden>
         <div class="pool">
           <h1 class="serif">key pool</h1>
-          <p class="lede">jio runs on <a href="https://console.groq.com/keys" target="_blank" rel="noopener">free groq keys</a> donated by people who use it. keys are picked round-robin; one that hits its limit rests for a minute, a revoked one is dropped. keys stay on the server — no browser ever sees them.</p>
+          <p class="lede">jio runs on free keys donated by people who use it — <a href="https://console.groq.com/keys" target="_blank" rel="noopener">groq</a>, <a href="https://build.nvidia.com/" target="_blank" rel="noopener">nvidia</a>, <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">gemini</a> and <a href="https://dashboard.cohere.com/api-keys" target="_blank" rel="noopener">cohere</a>. keys are picked least-used-first; one that hits its limit rests exactly as long as the provider asks, a revoked one is dropped, and a request rolls on to the next key or the next provider rather than failing. keys stay on the server — no browser ever sees them.</p>
 
           <div class="pool-grid">
             <section class="card">
               <h2>donate a key</h2>
               <form id="donate">
-                <label>groq api key<input id="donate-key" type="password" placeholder="gsk_…" autocomplete="off" spellcheck="false" required></label>
+                <label>provider<select id="donate-provider"></select></label>
+                <label>api key<input id="donate-key" type="password" placeholder="gsk_…" autocomplete="off" spellcheck="false" required></label>
                 <label>label <span class="opt">optional</span><input id="donate-label" type="text" placeholder="e.g. spare key" maxlength="32"></label>
                 <button class="btn" type="submit">add to pool</button>
-                <p class="note" id="donate-note">your key is stored server-side and never sent to another browser. jio picks from the pool round-robin.</p>
+                <p class="note" id="donate-note">your key is stored server-side and never sent to another browser. jio reaches for the least-used healthy key first.</p>
               </form>
             </section>
 
@@ -192,7 +193,7 @@
             </div>
             <div class="stats" id="stats"></div>
             <table class="key-table">
-              <thead><tr><th>donor</th><th>key</th><th>requests</th><th>status</th></tr></thead>
+              <thead><tr><th>donor</th><th>provider</th><th>key</th><th>requests</th><th>status</th></tr></thead>
               <tbody id="community"></tbody>
             </table>
           </section>
@@ -231,7 +232,7 @@
   <script defer src="js/vendor/supabase.js"></script>
   <script defer src="js/tween.js"></script>
   <script defer src="js/eyes.js"></script>
-  <script defer src="js/groq.js"></script>
+  <script defer src="js/models.js"></script>
   <script defer src="js/supa.js"></script>
   <script defer src="js/mascot.js"></script>
   <script defer src="js/chat.js"></script>

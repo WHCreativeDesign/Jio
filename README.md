@@ -21,20 +21,47 @@ to the sign-in screen instead of spinning forever. A `#boot` splash (just the ey
 breathing) covers the gap; a 12s last-resort watchdog and an `unhandledrejection` listener
 back that up in case anything upstream is ever missed.
 
-**Models.** Groq retires models on a schedule, so the dropdown is not hardcoded — it asks
-the edge function for Groq's live `/models` list and filters out non-chat entries. A
-remembered model that has since been decommissioned is dropped on load. `js/groq.js`
-carries only a seed list for first paint and a fallback.
+**Providers.** Four of them — Groq, NVIDIA, Gemini and Cohere — all reached over their
+OpenAI-compatible endpoints, so one code path serves all four. A model travels as
+`provider:model-id`.
 
-**Chat.** The browser never talks to Groq. It calls the `chat` edge function with the user's
-access token; the function picks a donated key server-side, streams Groq back, and records
-the result. A key that returns 401/403 is marked dead, one that returns 429 cools for a
-minute, and the next request tries the next key.
+**You pick a provider, not a model.** The picker is Auto, Groq, NVIDIA, Gemini, Cohere —
+nothing else. Every one of these vendors retires model names on their own schedule, so
+there's no list to go stale: the edge function asks each provider what it actually serves,
+drops everything that isn't a text chat model (embedders, rerankers, TTS, video, image),
+and resolves each provider to whichever of its models is closest to `qwen/qwen3.8-27b` —
+the best of this bunch for code. Today that's Qwen3.8 27B on Groq, DeepSeek V4 Flash on
+NVIDIA, Gemini Flash, and Command A on Cohere, but none of those names are written down
+anywhere; they're matched live.
+
+**Auto.** The default, and the point of the whole thing: it walks every provider that still
+has headroom, each at its best, so the pool keeps answering after any single one taps out.
+Whichever route served a reply is named under the composer.
+
+**Chat.** The browser never talks to a provider. It calls the `chat` edge function with the
+user's access token; the function picks a donated key server-side, streams the provider
+back, and records the result. `X-Jio-Route` says which provider and model actually served it.
+
+**Getting the most out of the pool.** Keys are picked fewest-failures-first, then
+least-recently-used, so load spreads instead of hammering one free tier. A key that returns
+401/403 is marked dead. One that returns 429 rests exactly as long as the provider asked
+(`Retry-After`, or Groq's `x-ratelimit-reset-*`), and only falls back to a 1m/2m/5m/15m
+backoff when it didn't say — resting a key longer than it asked for is quota left on the
+table. A success clears the failure streak. Requests walk provider → model → key, because
+each of those fails on its own: a provider taps out, a catalogue advertises a model the
+account can't actually call (NVIDIA 404s these) or that's been retired (410), a single key
+hits its minute limit.
+
+**Context compression.** Every turn resends the history, which is how a long chat quietly
+multiplies what the pool pays for. Past a character budget, the older turns are folded into
+one dense summary by the cheapest model on hand and only the recent ones travel intact. The
+summary lives on the chat row, so reopening it later doesn't pay to redo the work, and the
+thread shows one quiet line where it happened.
 
 **Key pool.** Donated keys live in `donated_keys`, which is RLS'd so you can only ever read
 your own row. The raw key is never exposed to any client — the community listing reads
-`pool_public`, a mirror table carrying only a masked key, donor handle, status, and use
-count, kept in sync by trigger.
+`pool_public`, a mirror table carrying only a masked key, donor handle, provider, status,
+and use count, kept in sync by trigger.
 
 **Canvas mode.** Asks the model for one self-contained ` ```html ` block and renders it in a
 sandboxed iframe beside the thread — preview/code tabs, copy, open in new tab. It streams
@@ -43,7 +70,8 @@ into the panel live.
 **Mascot.** One mascot, in the thread. It sits in the greeting, then glides into the avatar
 slot of each new reply — position, size, and corner radius tweening together, leaning into
 the direction of travel. It goes `focused` while a reply streams in, then reads a
-`{{mood:x}}` tag the model is instructed to lead every reply with (stripped before display)
+`{{mood:x}}` tag the model is asked to lead every reply with — stripped wherever it lands,
+since models cheerfully put it at the end instead —
 and holds that expression for a couple seconds before settling to neutral — the model
 picks its own reaction instead of the UI faking one.
 
@@ -52,9 +80,9 @@ picks its own reaction instead of the UI faking one.
 | table | what |
 | --- | --- |
 | `profiles` | handle per user, filled by trigger on signup |
-| `donated_keys` | raw key + status + use count. RLS: owner only |
+| `donated_keys` | raw key + provider + status + failure streak + use count. RLS: owner only |
 | `pool_public` | masked mirror for the community listing. RLS: any signed-in user reads |
-| `chats` / `messages` | conversation history. RLS: owner only |
+| `chats` / `messages` | conversation history, plus the rolling context summary. RLS: owner only |
 
 Edge function: `chat` (JWT verified in the body so CORS preflight works).
 
@@ -65,7 +93,7 @@ Edge function: `chat` (JWT verified in the body so CORS preflight works).
 ```
 supabase/config.toml                project ref + function settings
 supabase/migrations/*.sql           schema, RLS, triggers
-supabase/functions/chat/index.ts    the Groq proxy
+supabase/functions/chat/index.ts    the multi-provider proxy
 ```
 
 ## Project config
@@ -83,7 +111,7 @@ css/lab.css      eye lab styles
 js/eyes.js       JioEyes canvas engine
 js/tween.js      Tween.run() — wraps a DOM mutation in a View Transition
 js/supa.js       Supabase client: auth (timeout-guarded) + data + streaming
-js/groq.js       model list
+js/models.js     providers, model labels, route labels, key formats
 js/mascot.js     in-thread mascot
 js/chat.js       app orchestration, canvas, pool UI
 js/app.js        eye lab

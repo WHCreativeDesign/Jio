@@ -133,7 +133,7 @@ canvas { display: block; }
   transition: 0.15s;
 }
 .card canvas { width: 100%; height: auto; aspect-ratio: 2 / 1; border-radius: 10px; background: #000; margin-bottom: 4px; }
-.card:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); transform: translateY(-2px); }
+.card:hover { border-color: var(--accent); transform: translateY(-2px); }
 .card.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .card-name { font-weight: 700; display: flex; align-items: center; gap: 8px; }
 .card-name kbd {

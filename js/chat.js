@@ -12,7 +12,7 @@
 
   let chats = loadChats();
   let current = null;
-  let mascot, greetEyes;
+  let mascot;
   let abort = null;
   let canvasMode = false;
 
@@ -37,9 +37,7 @@
 
   function boot() {
     app.hidden = false;
-    mascot = new Mascot($('#mascot'));
-    greetEyes = new JioEyes($('#greet-eyes'), { size: 0.5, gap: 0.5, idle: true, track: false });
-    greetEyes.start();
+    mascot = new Mascot($('#thread-wrap'), $('#mascot'));
     const h = new Date().getHours();
     $('#greet-text').textContent = `${h < 5 ? 'up late' : h < 12 ? 'good morning' : h < 18 ? 'good afternoon' : 'good evening'}, weston`;
 
@@ -53,23 +51,7 @@
     setupSidebar();
     setupCanvas();
     setupPool();
-    setupMascotHops();
     $('#input').focus();
-  }
-
-  /* ---------- mascot ---------- */
-  function setupMascotHops() {
-    document.addEventListener('focusin', (e) => {
-      const t = e.target.closest('textarea, input, button, select, .recent, .card, .nav-item');
-      if (t && !$('#mascot').contains(t)) mascot.hopTo(t);
-    });
-    let hoverT;
-    document.addEventListener('pointerover', (e) => {
-      const t = e.target.closest('.new-chat, .nav-item, .recent, .canvas-chip, .card, .send, .pill');
-      clearTimeout(hoverT);
-      if (t) hoverT = setTimeout(() => mascot.hopTo(t), 260);
-    });
-    setTimeout(() => mascot.hopTo($('#composer')), 300);
   }
 
   /* ---------- sidebar ---------- */
@@ -110,6 +92,7 @@
     $('#greeting').hidden = false;
     $('#chat-title').textContent = '';
     renderRecents();
+    mascot.moveTo($('#greet-slot'), false);
   }
   function openChat(id) {
     const c = chats.find(x => x.id === id); if (!c) return;
@@ -120,6 +103,8 @@
     c.messages.forEach(m => appendMsg(m.role, m.content));
     renderRecents();
     scrollBottom();
+    const last = [...$('#thread').querySelectorAll('.msg.assistant .who')].pop();
+    mascot.moveTo(last || $('#greet-slot'), false);
   }
   function persist() {
     current.updated = Date.now();
@@ -127,6 +112,7 @@
     saveChats(); renderRecents();
   }
 
+  const EYE_MARK = '<svg viewBox="0 0 64 40" aria-hidden="true"><rect x="4" y="4" width="24" height="32" rx="8" fill="#fff"/><rect x="36" y="4" width="24" height="32" rx="8" fill="#fff"/></svg>';
   function appendMsg(role, content) {
     const d = document.createElement('div');
     d.className = `msg ${role}`;
@@ -134,9 +120,7 @@
       d.innerHTML = `<div class="bubble"></div>`;
       d.querySelector('.bubble').textContent = content;
     } else {
-      d.innerHTML = `<div class="who"><canvas width="48" height="28"></canvas></div><div class="bubble"></div>`;
-      const e = new JioEyes(d.querySelector('canvas'), { size: 0.55, gap: 0.45, track: false, autoBlink: true });
-      e.start();
+      d.innerHTML = `<div class="who slot">${EYE_MARK}</div><div class="bubble"></div>`;
       setBubble(d.querySelector('.bubble'), content);
     }
     $('#thread').appendChild(d);
@@ -182,7 +166,7 @@
 
     const node = appendMsg('assistant', '');
     const bubble = node.querySelector('.bubble');
-    mascot.hopTo(node); mascot.think();
+    mascot.moveTo(node.querySelector('.who')); mascot.think();
 
     if (!key) {
       bubble.innerHTML = `<p class="err">no groq keys in the pool yet.</p><p>add one on the <a href="#" data-pool>key pool</a> page — free at console.groq.com.</p>`;

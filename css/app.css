@@ -126,10 +126,9 @@ canvas { display: block; }
 .chat-title { flex: 1; font-size: 14px; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
-.thread-wrap { flex: 1; overflow-y: auto; scroll-behavior: smooth; }
+.thread-wrap { flex: 1; overflow-y: auto; scroll-behavior: smooth; position: relative; }
 .greeting { max-width: 720px; margin: 0 auto; padding: 14vh 24px 24px; text-align: center; }
-.greet-eyes { width: 84px; height: 50px; margin: 0 auto 18px; background: #000; border-radius: 14px; display: grid; place-items: center; }
-.greet-eyes canvas { width: 72px; height: 36px; }
+.greet-eyes { width: 84px; height: 50px; margin: 0 auto 18px; border-radius: 14px; }
 .greet-text { font-family: var(--serif); font-weight: 400; font-size: 40px; letter-spacing: -0.02em; margin: 0; line-height: 1.15; }
 .thread { max-width: 760px; margin: 0 auto; padding: 8px 24px 32px; display: flex; flex-direction: column; gap: 22px; }
 .msg { display: flex; gap: 12px; }
@@ -137,7 +136,8 @@ canvas { display: block; }
 .msg.user .bubble { background: var(--bg-user); border-radius: 18px 18px 4px 18px; padding: 10px 16px; max-width: 80%; white-space: pre-wrap; }
 .msg.assistant { align-items: flex-start; }
 .msg.assistant .who { width: 28px; height: 28px; border-radius: 8px; background: #000; flex: none; display: grid; place-items: center; margin-top: 2px; }
-.msg.assistant .who canvas { width: 24px; height: 14px; }
+.msg.assistant .who svg { width: 18px; height: 11px; transition: opacity 0.25s 0.35s; }
+.slot.live svg { opacity: 0; transition-delay: 0s; }
 .msg.assistant .bubble { flex: 1; min-width: 0; }
 .msg.assistant .bubble > :first-child { margin-top: 0; }
 .msg.assistant .bubble > :last-child { margin-bottom: 0; }
@@ -250,20 +250,10 @@ canvas { display: block; }
 
 /* ---------- mascot ---------- */
 .mascot {
-  position: fixed; left: 0; top: 0; width: 64px; height: 40px; z-index: 40; cursor: pointer;
-  transition: transform 0.45s cubic-bezier(0.34, 1.4, 0.64, 1);
-  will-change: transform; pointer-events: auto;
+  position: absolute; left: 0; top: 0; width: 84px; height: 50px; border-radius: 14px;
+  background: #000; z-index: 5; cursor: pointer; overflow: hidden; will-change: transform, width, height;
 }
-.mascot canvas { width: 64px; height: 40px; }
-.mascot::before { content: ""; position: absolute; inset: 0; background: #000; border-radius: 12px; z-index: -1; }
-.mascot.hop { animation: hop 0.45s ease-out; }
-@keyframes hop {
-  0% { margin-top: 0; }
-  40% { margin-top: -22px; }
-  75% { margin-top: 4px; }
-  100% { margin-top: 0; }
-}
-.gate:not([hidden]) ~ .mascot { display: none; }
+.mascot canvas { position: absolute; left: 50%; top: 50%; width: 64px; height: 40px; transform: translate(-50%,-50%); transform-origin: center; will-change: transform; }
 
 /* ---------- responsive ---------- */
 @media (max-width: 900px) {

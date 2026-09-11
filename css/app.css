@@ -212,8 +212,11 @@ canvas { display: block; }
 .msg.assistant .who {
   /* just reserved space for the mascot to sit in when it's here — no box,
      no border. It's eyes-only now; a leftover square once it moves on
-     read as a stray design artifact. */
-  width: 42px; height: 30px; flex: none; margin-top: 1px;
+     read as a stray design artifact.
+     Sized to exactly match the first text line's own box (body is 15px/1.6 =
+     24px line-height, bubble has 1px top padding) so the mascot's vertical
+     center lands on the first line's center instead of the bubble's. */
+  width: 42px; height: 24px; flex: none; margin-top: 1px;
 }
 
 .msg.assistant .bubble { flex: 1; min-width: 0; padding-top: 1px; }

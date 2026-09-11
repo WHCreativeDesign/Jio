@@ -192,7 +192,7 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
     $('#new-chat').addEventListener('click', () => { newChat(); showView('chat'); $('#input').focus(); });
     $('#new-chat-top').addEventListener('click', () => { newChat(); showView('chat'); $('#input').focus(); });
     $('#brand').addEventListener('click', (e) => { e.preventDefault(); showView('chat'); });
-    $('#canvas-nav').addEventListener('click', () => { showView('chat'); Tween.run(() => app.classList.toggle('canvas-open')); });
+    $('#canvas-nav').addEventListener('click', () => showView('chat', () => app.classList.toggle('canvas-open')));
     $('#me').addEventListener('click', async () => { await Auth.signOut(); location.reload(); });
     $('#clear-chats').addEventListener('click', async () => {
       if (!chats.length) return;
@@ -202,12 +202,18 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
     document.querySelectorAll('.nav-item[data-view]').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
     if (matchMedia('(max-width: 900px)').matches) app.classList.add('collapsed');
   }
-  function showView(v) {
+  function showView(v, extra) {
+    // one startViewTransition per gesture — a second call while the first is
+    // still in flight throws "already in progress", which surfaces to the user
+    // as Chrome's "Transition failed, try reloading" banner. #canvas-nav used
+    // to trigger this on every click by calling showView() then a second
+    // Tween.run() right after; extra folds any such follow-up into the same transition.
     Tween.run(() => {
       $('#view-chat').hidden = v !== 'chat';
       $('#view-pool').hidden = v !== 'pool';
       document.querySelectorAll('.nav-item[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === v));
       if (matchMedia('(max-width: 900px)').matches) app.classList.add('collapsed');
+      if (extra) extra();
     });
     if (v === 'chat') mascot.sync();
     if (v === 'pool') renderPool();

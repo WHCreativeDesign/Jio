@@ -40,6 +40,15 @@
       return { x: a.left - b.left + this.wrap.scrollLeft, y: a.top - b.top + this.wrap.scrollTop, w: a.width, h: a.height, r };
     }
 
+    /* Where the mascot actually is on screen right now, in wrap coordinates. */
+    here() {
+      const a = this.el.getBoundingClientRect(), b = this.wrap.getBoundingClientRect();
+      return {
+        x: a.left - b.left + this.wrap.scrollLeft, y: a.top - b.top + this.wrap.scrollTop,
+        w: a.width, h: a.height, r: this.cur ? this.cur.r : parseFloat(getComputedStyle(this.el).borderRadius) || 10,
+      };
+    }
+
     /* Glide to a slot. Previous slot gets its static mark back. */
     moveTo(slot, animate = true) {
       if (!slot) return;
@@ -47,9 +56,11 @@
       this.slot = slot; slot.classList.add('live');
       const tgt = this.measure(slot);
       if (!this.cur || !animate) { this.cur = tgt; this.to = null; this.apply(); return; }
-      const dist = Math.hypot(tgt.x - this.cur.x, tgt.y - this.cur.y);
-      if (dist < 1 && Math.abs(tgt.w - this.cur.w) < 1) return;
-      this.from = { ...this.cur }; this.to = tgt;
+      // start from the on-screen position, so a layout change mid-flight can't teleport the launch point
+      const from = this.here();
+      const dist = Math.hypot(tgt.x - from.x, tgt.y - from.y);
+      if (dist < 1 && Math.abs(tgt.w - from.w) < 1) { this.cur = tgt; this.to = null; this.apply(); return; }
+      this.cur = from; this.from = from; this.to = tgt;
       this.t0 = performance.now();
       this.dur = Math.min(900, Math.max(420, 320 + dist * 0.55));
       this.eyes.blink();

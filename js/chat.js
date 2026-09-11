@@ -18,8 +18,10 @@
 
   /* ---------- theme ---------- */
   const theme = (t) => { document.documentElement.dataset.theme = t; try { localStorage.setItem('jio.theme', t); } catch (e) {} };
-  try { const t = localStorage.getItem('jio.theme'); if (t) theme(t); else if (matchMedia('(prefers-color-scheme: dark)').matches) theme('dark'); } catch (e) {}
-  $('#theme').addEventListener('click', () => theme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
+  let savedTheme = 'dark';
+  try { savedTheme = localStorage.getItem('jio.theme') || 'dark'; } catch (e) {}
+  theme(savedTheme);
+  $('#theme').addEventListener('click', () => theme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'));
 
   /* ---------- markdown ---------- */
   marked.setOptions({ breaks: true, gfm: true });
@@ -57,6 +59,8 @@
   /* ---------- sidebar ---------- */
   function setupSidebar() {
     $('#collapse').addEventListener('click', () => app.classList.add('collapsed'));
+    $('#clear-chats').addEventListener('click', () => { chats = []; saveChats(); newChat(); });
+    $('#canvas-nav').addEventListener('click', () => { showView('chat'); app.classList.toggle('canvas-open'); });
     $('#expand').addEventListener('click', () => app.classList.remove('collapsed'));
     $('#new-chat').addEventListener('click', () => { newChat(); showView('chat'); $('#input').focus(); });
     $('#brand').addEventListener('click', (e) => { e.preventDefault(); showView('chat'); });
@@ -67,12 +71,13 @@
     $('#view-chat').hidden = v !== 'chat';
     $('#view-pool').hidden = v !== 'pool';
     document.querySelectorAll('.nav-item[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === v));
+    if (v === 'chat') mascot.sync();
     if (matchMedia('(max-width: 900px)').matches) app.classList.add('collapsed');
     if (v === 'pool') renderPool();
   }
   function renderRecents() {
     const el = $('#recents'); el.innerHTML = '';
-    if (!chats.length) { el.innerHTML = '<div class="empty" style="padding:4px 10px">no chats yet</div>'; return; }
+    if (!chats.length) { el.innerHTML = '<div class="empty-note">no chats yet</div>'; return; }
     chats.slice().sort((a, b) => b.updated - a.updated).forEach(c => {
       const d = document.createElement('div');
       d.className = 'recent' + (current && c.id === current.id ? ' on' : ''); d.tabIndex = 0;
@@ -90,6 +95,7 @@
     current = { id: Math.random().toString(36).slice(2, 10), title: '', created: Date.now(), updated: Date.now(), messages: [] };
     $('#thread').innerHTML = '';
     $('#greeting').hidden = false;
+    $('#view-chat').classList.add('empty');
     $('#chat-title').textContent = '';
     renderRecents();
     mascot.moveTo($('#greet-slot'), false);
@@ -99,6 +105,7 @@
     current = c;
     $('#thread').innerHTML = '';
     $('#greeting').hidden = c.messages.length > 0;
+    $('#view-chat').classList.toggle('empty', c.messages.length === 0);
     $('#chat-title').textContent = c.title;
     c.messages.forEach(m => appendMsg(m.role, m.content));
     renderRecents();
@@ -148,17 +155,18 @@
       input.value = ''; grow();
       ask(text);
     });
-    $('#canvas-toggle').addEventListener('click', () => {
-      canvasMode = !canvasMode;
-      $('#canvas-toggle').setAttribute('aria-pressed', canvasMode);
-      if (canvasMode) app.classList.add('canvas-open'); else app.classList.remove('canvas-open');
+    document.querySelectorAll('.seg-btn').forEach(b => b.addEventListener('click', () => {
+      canvasMode = b.dataset.mode === 'canvas';
+      document.querySelectorAll('.seg-btn').forEach(x => x.classList.toggle('on', x === b));
+      app.classList.toggle('canvas-open', canvasMode);
       mascot.react(canvasMode ? 'excited' : 'neutral', 1000);
-    });
+    }));
   }
 
   async function ask(text) {
     const key = Pool.pick();
     $('#greeting').hidden = true;
+    $('#view-chat').classList.remove('empty');
     current.messages.push({ role: 'user', content: text });
     if (!current.title) { current.title = text.slice(0, 48); $('#chat-title').textContent = current.title; }
     appendMsg('user', text);

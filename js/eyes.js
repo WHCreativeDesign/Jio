@@ -62,9 +62,8 @@
     constructor(canvas, opts = {}) {
       this.c = canvas;
       this.ctx = canvas.getContext('2d');
-      this.color = opts.color || '#38f2ff';
+      this.color = opts.color || '#ffffff';
       this.bg = opts.bg || null;
-      this.glow = opts.glow !== undefined ? opts.glow : 1;
       this.speed = opts.speed || 14;
       this.gap = opts.gap || 0.55;         // gap between eyes, as fraction of eye width
       this.size = opts.size || 0.34;       // eye width as fraction of canvas height
@@ -220,7 +219,6 @@
         if (fx === 'tears') {
           const ty = ((ft * 0.9 + (side === 'L' ? 0.5 : 0)) % 1);
           ctx.save(); ctx.fillStyle = this.color; ctx.globalAlpha = 1 - ty;
-          ctx.shadowColor = this.color; ctx.shadowBlur = ew * 0.2;
           const tx = x + s * w * 0.3, tyy = y + h / 2 + ty * eh * 0.9;
           roundRect(ctx, tx - ew * 0.04, tyy, ew * 0.08, ew * 0.14, [ew * 0.04, ew * 0.04, ew * 0.04, ew * 0.04]);
           ctx.fill(); ctx.restore();
@@ -229,13 +227,12 @@
       drawEye(this.cur.L, 'L'); drawEye(this.cur.R, 'R');
       ctx.save();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      if (this.glow) { ctx.shadowColor = this.color; ctx.shadowBlur = ew * 0.35 * this.glow * dpr; }
       ctx.drawImage(this.off, 0, 0);
       ctx.restore();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       if (fx === 'zz') {
-        ctx.save(); ctx.fillStyle = this.color; ctx.shadowColor = this.color; ctx.shadowBlur = ew * 0.2;
+        ctx.save(); ctx.fillStyle = this.color;
         ctx.font = `700 ${ew * 0.28}px ui-sans-serif, system-ui, sans-serif`;
         for (let i = 0; i < 3; i++) {
           const p = ((ft * 0.5) + i * 0.33) % 1;

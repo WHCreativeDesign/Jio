@@ -50,7 +50,12 @@
 }
 
 * { box-sizing: border-box; }
-html, body { height: 100%; }
+/* The page itself must never scroll — only .thread-wrap, .recents, .view-pool
+   and the canvas body do. If html/body can scroll independently, iOS Safari
+   computes 100dvh against its taller "chrome hidden" viewport instead of the
+   current one, and the fixed bottom bar (composer/toolbar) it draws on top
+   ends up sized wrong, overlapping the app's own bottom-anchored content. */
+html, body { height: 100%; height: 100dvh; overflow: hidden; overscroll-behavior: none; }
 body {
   margin: 0;
   background: var(--bg);

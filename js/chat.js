@@ -153,6 +153,7 @@
     $('#expand').addEventListener('click', () => Tween.run(() => app.classList.remove('collapsed')));
     $('#scrim').addEventListener('click', () => Tween.run(() => app.classList.add('collapsed')));
     $('#new-chat').addEventListener('click', () => { newChat(); showView('chat'); $('#input').focus(); });
+    $('#new-chat-top').addEventListener('click', () => { newChat(); showView('chat'); $('#input').focus(); });
     $('#brand').addEventListener('click', (e) => { e.preventDefault(); showView('chat'); });
     $('#canvas-nav').addEventListener('click', () => { showView('chat'); Tween.run(() => app.classList.toggle('canvas-open')); });
     $('#me').addEventListener('click', async () => { await Auth.signOut(); location.reload(); });
@@ -240,15 +241,67 @@
     $('#thread').appendChild(d);
     return d;
   }
-  const TYPING = '<div class="typing" aria-label="jio is working"><i></i><i></i><i></i></div>';
+  /* Before the first token, a status header rather than dots — rotating phrases,
+     each one blurring down into place, painted with a gradient sweeping through it. */
+  const THINKING_PHRASES = ['Thinking', 'Reading your message', 'Weighing a few directions', 'Putting it into words'];
+  function startThinking(bubble) {
+    if (bubble._thinkTimer) return;
+    bubble.classList.remove('raw', 'cursor');
+    bubble.innerHTML = '<div class="thinking"><span class="thinking-text"></span></div>';
+    const el = bubble.querySelector('.thinking-text');
+    let i = 0;
+    const show = () => {
+      el.textContent = THINKING_PHRASES[i % THINKING_PHRASES.length];
+      el.classList.remove('enter');
+      void el.offsetWidth; // restart the entrance animation each phrase
+      el.classList.add('enter');
+      i++;
+    };
+    show();
+    bubble._thinkTimer = setInterval(show, 1700);
+  }
+  function stopThinking(bubble) {
+    if (bubble._thinkTimer) { clearInterval(bubble._thinkTimer); bubble._thinkTimer = null; }
+  }
+
+  /* Streaming a chunk: append it as plain text (no markdown parse per token —
+     that happens once, at the end) so each new piece can blur in on its own,
+     rather than the whole bubble re-parsing and popping on every token. */
+  function renderStreamingChunk(bubble, text) {
+    if (bubble.querySelector('.thinking')) { bubble.innerHTML = ''; bubble._rawLen = 0; }
+    bubble.classList.add('raw');
+    const prevLen = bubble._rawLen || 0;
+    const delta = text.slice(prevLen);
+    if (delta) {
+      const span = document.createElement('span');
+      span.className = 'tok';
+      span.textContent = delta;
+      bubble.appendChild(span);
+    }
+    bubble._rawLen = text.length;
+  }
+
   function setBubble(bubble, text, streaming) {
-    if (streaming && !text) { bubble.innerHTML = TYPING; bubble.classList.remove('cursor'); return; }
+    if (streaming) {
+      if (!text) { startThinking(bubble); return; }
+      stopThinking(bubble);
+      renderStreamingChunk(bubble, text);
+      bubble.classList.add('cursor');
+      return;
+    }
+    // final settle: one real markdown parse, replacing the raw streamed text
+    stopThinking(bubble);
+    bubble.classList.remove('cursor', 'raw');
+    bubble._rawLen = 0;
     bubble.innerHTML = render(stripHtmlBlock(text));
-    bubble.classList.toggle('cursor', !!streaming);
     const chip = bubble.querySelector('[data-open]');
     if (chip) chip.addEventListener('click', () => openCanvas(extractHtml(text)));
   }
-  const scrollBottom = () => { const w = $('#thread-wrap'); w.scrollTop = w.scrollHeight; };
+  const scrollBottom = (smooth) => {
+    const w = $('#thread-wrap');
+    if (smooth) w.scrollTo({ top: w.scrollHeight, behavior: 'smooth' });
+    else w.scrollTop = w.scrollHeight;
+  };
 
   /* ---------- composer ---------- */
   function setupComposer() {
@@ -278,7 +331,7 @@
     $('#view-chat').classList.remove('empty');
     current.messages.push({ role: 'user', content: text });
     appendMsg('user', text);
-    scrollBottom();
+    scrollBottom(true);
     if (isQuestionable(text)) mascot.judge();
 
     if (!current.id) {
@@ -317,6 +370,8 @@
     } catch (err) {
       if (err.name === 'AbortError') { setBubble(bubble, full || '_stopped_', false); mascot.done(true); }
       else {
+        stopThinking(bubble);
+        bubble.classList.remove('raw', 'cursor');
         const poolProblem = err.code === 'no_keys' || err.code === 'pool_exhausted';
         bubble.innerHTML = `<p class="err">${esc(err.message)}</p>` +
           (poolProblem ? `<p>add a free key on the <a href="#" data-pool>key pool</a> page — grab one at console.groq.com.</p>` : '');

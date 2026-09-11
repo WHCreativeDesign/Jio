@@ -13,6 +13,11 @@ Static front end on GitHub Pages, Supabase for accounts, storage, and the model 
 
 **Accounts.** Email + password, no 2FA. A trigger mirrors each new user into `profiles`.
 
+**Models.** Groq retires models on a schedule, so the dropdown is not hardcoded — it asks
+the edge function for Groq's live `/models` list and filters out non-chat entries. A
+remembered model that has since been decommissioned is dropped on load. `js/groq.js`
+carries only a seed list for first paint and a fallback.
+
 **Chat.** The browser never talks to Groq. It calls the `chat` edge function with the user's
 access token; the function picks a donated key server-side, streams Groq back, and records
 the result. A key that returns 401/403 is marked dead, one that returns 429 cools for a

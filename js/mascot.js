@@ -1,4 +1,5 @@
-/* One mascot, just eyes. Lives inside the thread and glides between slots. */
+/* One mascot, just eyes — no bounding box. Lives inside the thread and glides
+   between slots, morphing size/position as it goes. */
 (function (global) {
   'use strict';
 
@@ -11,13 +12,15 @@
     constructor(wrap, el) {
       this.wrap = wrap; this.el = el;
       this.canvas = el.querySelector('canvas');
-      this.eyes = new JioEyes(this.canvas, { size: 0.5, gap: 0.5, idle: true, track: false });
+      this.eyes = new JioEyes(this.canvas, { size: 0.5, gap: 0.5, idle: true, track: false, color: this.themeColor() });
       this.eyes.start();
       this.slot = null;
       this.mood = 'neutral';
       this.busy = false;
       this.cur = null;          // {x,y,w,h,r}
       this.from = null; this.to = null; this.t0 = 0; this.dur = 0;
+      this.judgeScale = 1; this.judgeShakeX = 0; this.judgeRot = 0;
+      this._judging = false; this._judgeQueue = [];
       this.raf = requestAnimationFrame(this.tick.bind(this));
 
       el.addEventListener('click', () => this.react('surprised', 900));
@@ -33,6 +36,13 @@
         else if (r < 0.21) this.react('sleepy', 2400);
       }, 5000);
     }
+
+    /* No box means the eyes must read against whatever background they float
+       over — white doesn't work on a light background. Match the theme's ink. */
+    themeColor() {
+      return (getComputedStyle(document.documentElement).getPropertyValue('--fg') || '#fff').trim() || '#fff';
+    }
+    syncTheme() { this.eyes.color = this.themeColor(); }
 
     measure(slot) {
       const a = slot.getBoundingClientRect(), b = this.wrap.getBoundingClientRect();
@@ -51,7 +61,9 @@
 
     /* Glide to a slot. Previous slot gets its static mark back. */
     moveTo(slot, animate = true) {
-      if (!slot) return;
+      // a hidden target (display:none, or an ancestor that is) has no sensible
+      // rect to fly to — measuring it collapses the mascot to a zero-size point
+      if (!slot || slot.offsetParent === null) return;
       if (this.slot && this.slot !== slot) this.slot.classList.remove('live');
       this.slot = slot; slot.classList.add('live');
       const tgt = this.measure(slot);
@@ -63,12 +75,12 @@
       this.cur = from; this.from = from; this.to = tgt;
       this.t0 = performance.now();
       this.dur = Math.min(900, Math.max(420, 320 + dist * 0.55));
-      this.eyes.blink();
+      if (!this._judging) this.eyes.blink();
     }
 
     /* Layout shifted under us (streaming text, resize): follow without ceremony. */
     sync() {
-      if (!this.slot || !this.slot.isConnected) return;
+      if (!this.slot || !this.slot.isConnected || this.slot.offsetParent === null) return;
       const tgt = this.measure(this.slot);
       if (this.to) { this.to = tgt; return; }
       if (!this.cur) { this.cur = tgt; this.apply(); return; }
@@ -100,9 +112,9 @@
       const c = this.cur; if (!c) return;
       this.el.style.transform = `translate(${c.x}px, ${c.y + lift}px)`;
       this.el.style.width = c.w + 'px'; this.el.style.height = c.h + 'px';
-      this.el.style.borderRadius = c.r + 'px';
-      const k = Math.min(c.w / CW, c.h / CH) * 0.86;
-      this.canvas.style.transform = `translate(-50%,-50%) rotate(${lean}deg) scale(${k}, ${k * squash})`;
+      const k = Math.min(c.w / CW, c.h / CH) * 0.86 * this.judgeScale;
+      this.canvas.style.transform =
+        `translate(calc(-50% + ${this.judgeShakeX}px), -50%) rotate(${lean + this.judgeRot}deg) scale(${k}, ${k * squash})`;
     }
 
     set(mood) { this.mood = mood; this.eyes.set(mood); }
@@ -116,6 +128,57 @@
     /* Working on it: a scanning sweep reads as doing something, not just pondering. */
     work() { this.busy = true; clearTimeout(this._reactT); this.set('scanning'); }
     done(ok = true) { this.busy = false; this.set('neutral'); this.react(ok ? 'happy' : 'sad', 1400); }
+
+    /* Something questionable came in: eyes go huge — an "ayo?" double-take — hold
+       a beat, shrink back down, then shake it off with a disapproving head-shake.
+       Runs in place, wherever the mascot currently sits. */
+    judge() {
+      if (this._judging) return;
+      this._judging = true;
+      this.busy = true;
+      clearTimeout(this._reactT);
+      const t0 = performance.now();
+      const G = 240, H = 280, S = 220, K = 700; // grow, hold, shrink, shake
+      const total = G + H + S + K;
+      this.eyes.set('surprised');
+
+      const step = (now) => {
+        const t = now - t0;
+        if (t < G) {
+          this.judgeScale = 1 + 0.9 * easeOutExpo(t / G);
+        } else if (t < G + H) {
+          const lp = (t - G) / H;
+          this.judgeScale = 1.9 + Math.sin(lp * Math.PI * 3) * 0.03;
+        } else if (t < G + H + S) {
+          const p = (t - G - H) / S;
+          this.judgeScale = 1.9 - 0.9 * easeOutExpo(p);
+          if (p > 0.5) this.eyes.set('suspicious');
+        } else if (t < total) {
+          const p = (t - G - H - S) / K;
+          const decay = Math.pow(1 - p, 1.7);
+          this.judgeScale = 1;
+          this.judgeShakeX = Math.sin(p * Math.PI * 8) * 10 * decay;
+          this.judgeRot = Math.sin(p * Math.PI * 8) * 7 * decay;
+          if (p > 0.05 && p < 0.09) this.eyes.set('confused');
+        } else {
+          this.judgeScale = 1; this.judgeShakeX = 0; this.judgeRot = 0;
+          this.apply();
+          this._judging = false; this.busy = false;
+          this.set('neutral');
+          const queued = this._judgeQueue; this._judgeQueue = [];
+          queued.forEach(fn => fn());
+          return;
+        }
+        this.apply();
+        requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }
+    /* Run fn once any judge() reaction in progress has finished (or now, if none is). */
+    afterJudge(fn) {
+      if (!this._judging) { fn(); return; }
+      this._judgeQueue.push(fn);
+    }
   }
 
   global.Mascot = Mascot;

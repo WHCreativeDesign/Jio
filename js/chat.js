@@ -25,6 +25,18 @@
   const stripHtmlBlock = (t) => t.replace(HTML_BLOCK, '<div class="canvas-chip" data-open><span>▣</span><b>open in canvas</b></div>\n');
   const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+  /* A light, purely cosmetic "sus" read on what's being typed — not moderation,
+     just a reason for the mascot to react. Keep it short and easy to extend. */
+  const SUS_PATTERNS = [
+    /\b(fuck|fucking|shit|bitch|asshole|bastard)\b/i,
+    /\bhow (?:do|to) (?:i |you )?(?:make|build) a (?:bomb|weapon|gun)\b/i,
+    /\bhack (?:into|someone'?s|my ex'?s|their)\b/i,
+    /\b(nudes?|nsfw)\b/i,
+    /\b(steal|shoplift)\b.*\bfrom\b/i,
+    /\bkill (?:my|your|his|her|them)\b/i,
+  ];
+  const isQuestionable = (t) => SUS_PATTERNS.some((re) => re.test(t));
+
   /* ---------- boot → auth → app ---------- */
   // No PIN, no gate: the eyes just breathe on #boot while Auth.restore() settles
   // (timed out and lock-hardened, so this can't hang) and we know which screen to show.
@@ -133,7 +145,10 @@
 
   /* ---------- sidebar ---------- */
   function setupSidebar() {
-    $('#theme').addEventListener('click', () => theme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'));
+    $('#theme').addEventListener('click', () => {
+      theme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+      mascot.syncTheme();
+    });
     $('#collapse').addEventListener('click', () => Tween.run(() => app.classList.add('collapsed')));
     $('#expand').addEventListener('click', () => Tween.run(() => app.classList.remove('collapsed')));
     $('#scrim').addEventListener('click', () => Tween.run(() => app.classList.add('collapsed')));
@@ -264,6 +279,7 @@
     current.messages.push({ role: 'user', content: text });
     appendMsg('user', text);
     scrollBottom();
+    if (isQuestionable(text)) mascot.judge();
 
     if (!current.id) {
       const title = text.slice(0, 60);
@@ -280,8 +296,7 @@
     const bubble = node.querySelector('.bubble');
     setBubble(bubble, '', true);
     scrollBottom();
-    mascot.moveTo(node.querySelector('.who'));
-    mascot.work();
+    mascot.afterJudge(() => { mascot.moveTo(node.querySelector('.who')); mascot.work(); });
 
     const messages = [{ role: 'system', content: SYSTEM + (canvasMode ? CANVAS_SYSTEM : '') }, ...current.messages.slice(-24)];
     abort = new AbortController();

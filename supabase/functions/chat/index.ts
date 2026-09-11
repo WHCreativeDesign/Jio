@@ -264,8 +264,16 @@ Deno.serve(async (req: Request) => {
           // 404 unavailable to this account, 410 retired, 400 rejected: the
           // model is the problem, not the key, so stop burning keys on it
           if (res.status === 404 || res.status === 410 || res.status === 400) break;
+          // 413: the request (a canvas conversation's history, say) is too big
+          // for this key's per-minute token budget. Waiting doesn't fix that —
+          // another key, model or provider might have room, so try on without
+          // marking this key unhealthy.
+          if (res.status === 413) continue;
           if (res.status >= 500) continue;  // provider hiccup: another key, then another model
-          return json({ error: lastError }, res.status);
+          // Anything else unexpected: "auto" exists to survive exactly this —
+          // one provider misbehaving must not sink the whole request when
+          // others in the plan haven't been tried yet.
+          continue;
         }
       }
     }

@@ -112,7 +112,7 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
     if (!booted) {
       booted = true;
       mascot = new Mascot($('#thread-wrap'), $('#mascot'));
-      setModels(Groq.SEED);
+      setModels(Models.SEED);
       $('#model').addEventListener('change', () => { try { localStorage.setItem('jio.model', $('#model').value); } catch (e) {} });
       refreshModels();
       setupComposer(); setupSidebar(); setupCanvas(); setupPool();
@@ -125,9 +125,6 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
     newChat();
     await loadChats();
     $('#input').focus();
-    // first paint can settle mid-transition/before webfonts swap in — one more
-    // measurement once the dust actually clears fixes the stray first-load offset
-    requestAnimationFrame(() => requestAnimationFrame(() => mascot.sync()));
   }
 
   /* ---------- models ---------- */
@@ -136,13 +133,23 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
     let want = sel.value;
     try { want = localStorage.getItem('jio.model') || want; } catch (e) {}
     sel.innerHTML = '';
-    Groq.sort(ids).forEach(id => {
-      const o = document.createElement('option');
-      o.value = id; o.textContent = Groq.label(id);
-      sel.appendChild(o);
+    // auto is first and the default: it aims at qwen3.8-27b and falls to each
+    // other provider's closest equivalent when groq has no headroom left
+    const auto = document.createElement('option');
+    auto.value = 'auto'; auto.textContent = 'Auto';
+    sel.appendChild(auto);
+    Models.group(ids).forEach(([p, list]) => {
+      const g = document.createElement('optgroup');
+      g.label = (Models.PROVIDERS[p] || {}).name || p;
+      list.forEach(id => {
+        const o = document.createElement('option');
+        o.value = id; o.textContent = Models.label(id);
+        g.appendChild(o);
+      });
+      sel.appendChild(g);
     });
-    // a remembered model that Groq has since retired must not stick around
-    sel.value = ids.includes(want) ? want : (sel.options[0] ? sel.options[0].value : '');
+    // a remembered model the provider has since retired must not stick around
+    sel.value = [...sel.querySelectorAll('option')].some(o => o.value === want) ? want : 'auto';
     try { localStorage.setItem('jio.model', sel.value); } catch (e) {}
   }
   async function refreshModels() {
@@ -150,6 +157,13 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
       const ids = await Data.models();
       if (ids.length) setModels(ids);
     } catch (e) { /* seed list stands */ }
+  }
+  /* Summarising history shouldn't cost as much as the conversation itself. */
+  function cheapModel() {
+    const ids = [...$('#model').querySelectorAll('option')].map(o => o.value).filter(v => v !== 'auto');
+    return ids.find(v => /flash-lite|-8b|mini|small|lite/i.test(v))
+        || ids.find(v => /flash|instant|nano/i.test(v))
+        || 'auto';
   }
 
   /* ---------- sidebar ---------- */
@@ -212,7 +226,7 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
 
   /* ---------- chats ---------- */
   function newChat() {
-    current = { id: null, title: '', messages: [] };
+    current = { id: null, title: '', messages: [], summary: '', upto: 0 };
     $('#thread').innerHTML = '';
     $('#greeting').hidden = false;
     $('#view-chat').classList.add('empty');
@@ -222,7 +236,7 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
   }
   async function openChat(id) {
     const meta = chats.find(c => c.id === id); if (!meta) return;
-    current = { id, title: meta.title, messages: [] };
+    current = { id, title: meta.title, messages: [], summary: meta.summary || '', upto: meta.compressed_upto || 0 };
     $('#thread').innerHTML = '';
     $('#chat-title').textContent = meta.title;
     renderRecents();
@@ -306,6 +320,44 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
     const chip = bubble.querySelector('[data-open]');
     if (chip) chip.addEventListener('click', () => openCanvas(extractHtml(text)));
   }
+  /* ---------- context compression ----------
+     Every turn resends the history, so a long chat quietly multiplies what the
+     pool pays for. Past a budget, the older turns are folded into one dense
+     summary and only the recent ones go over verbatim. The summary is saved on
+     the chat row, so reopening it later doesn't pay to redo the same work. */
+  const CTX_BUDGET = 24000;   // characters of history before it's worth compressing
+  const KEEP_RECENT = 8;      // turns that always travel intact
+  const SUMMARIZE = `Compress this conversation into a dense brief for an assistant that has to continue it. Keep names, decisions, file paths, code identifiers, numbers, stated preferences and anything still unresolved. Drop pleasantries and restatement. No preamble, no headings. Under 200 words.`;
+
+  async function compress() {
+    const msgs = current.messages;
+    // measure what this turn would actually send, not just the part being folded
+    const live = msgs.slice(current.upto);
+    const size = (current.summary || '').length + live.reduce((a, m) => a + m.content.length, 0);
+    if (size < CTX_BUDGET) return;
+    const older = live.slice(0, Math.max(0, live.length - KEEP_RECENT));
+    if (older.length < 4) return;
+
+    const prior = current.summary ? `Earlier summary:\n${current.summary}\n\n` : '';
+    const transcript = older.map(m => `${m.role}: ${m.content}`).join('\n\n');
+    try {
+      const out = await Data.stream({
+        model: cheapModel(),
+        messages: [{ role: 'system', content: SUMMARIZE }, { role: 'user', content: prior + transcript }],
+        onToken: () => {},
+      });
+      const text = out.replace(MOOD_RE, '').trim();
+      if (!text) return;
+      current.summary = text;
+      current.upto = msgs.length - KEEP_RECENT;
+      if (current.id) Data.setChatSummary(current.id, current.summary, current.upto).catch(() => {});
+      const note = document.createElement('div');
+      note.className = 'ctx-note';
+      note.textContent = 'earlier messages compressed';
+      $('#thread').appendChild(note);
+    } catch (e) { /* housekeeping must never block a reply */ }
+  }
+
   const scrollBottom = (smooth) => {
     const w = $('#thread-wrap');
     if (smooth) w.scrollTo({ top: w.scrollHeight, behavior: 'smooth' });
@@ -360,7 +412,12 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
     scrollBottom();
     mascot.afterJudge(() => { mascot.moveTo(node.querySelector('.who')); mascot.work(); });
 
-    const messages = [{ role: 'system', content: SYSTEM + (canvasMode ? CANVAS_SYSTEM : '') }, ...current.messages.slice(-24)];
+    await compress();
+    const messages = [
+      { role: 'system', content: SYSTEM + (canvasMode ? CANVAS_SYSTEM : '') },
+      ...(current.summary ? [{ role: 'system', content: `Earlier in this conversation, compressed:\n${current.summary}` }] : []),
+      ...current.messages.slice(current.upto).slice(-24),
+    ];
     abort = new AbortController();
     $('#send').classList.add('stop');
     let full = '', lastCanvas = 0, mood = null, moodSettled = false;
@@ -442,12 +499,22 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
 
   /* ---------- key pool ---------- */
   function setupPool() {
+    const pick = $('#donate-provider');
+    Models.ORDER.forEach(p => {
+      const o = document.createElement('option');
+      o.value = p; o.textContent = Models.PROVIDERS[p].name;
+      pick.appendChild(o);
+    });
+    const hint = () => { $('#donate-key').placeholder = Models.PROVIDERS[pick.value].hint; };
+    pick.addEventListener('change', hint);
+    hint();
+
     $('#donate').addEventListener('submit', async (e) => {
       e.preventDefault();
       const note = $('#donate-note');
       note.textContent = 'checking…'; note.className = 'note';
       try {
-        await Data.donate($('#donate-key').value, $('#donate-label').value);
+        await Data.donate($('#donate-key').value, $('#donate-label').value, pick.value);
         $('#donate-key').value = ''; $('#donate-label').value = '';
         note.textContent = 'added. thanks for feeding jio.'; note.className = 'note ok';
         mascot.react('love', 1600);
@@ -464,7 +531,7 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
     if (!mine.length) list.innerHTML = '<div class="empty">none yet — add one on the left.</div>';
     mine.forEach(k => {
       const r = document.createElement('div'); r.className = 'key-row';
-      r.innerHTML = `<span class="dot ${k.status}"></span><span class="lbl"></span><code>${esc(k.masked)}</code><span class="uses">${k.uses} req</span><button class="del" title="remove">×</button>`;
+      r.innerHTML = `<span class="dot ${k.status}"></span><span class="prov">${esc((Models.PROVIDERS[k.provider] || {}).name || k.provider)}</span><span class="lbl"></span><code>${esc(k.masked)}</code><span class="uses">${k.uses} req</span><button class="del" title="remove">×</button>`;
       r.querySelector('.lbl').textContent = k.label;
       r.title = k.last_error || '';
       r.querySelector('.del').addEventListener('click', async () => { await Data.removeKey(k.id); renderPool(); });
@@ -472,14 +539,15 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
     });
 
     const { rows, stats } = await Data.pool();
+    const providers = new Set(rows.map(r => r.provider));
     $('#stats').innerHTML = [
       [stats.keys, 'keys in pool'],
       [stats.healthy, 'healthy'],
+      [providers.size, providers.size === 1 ? 'provider' : 'providers'],
       [Number(stats.requests).toLocaleString(), 'requests served'],
-      ['~14k', 'free tokens/min'],
     ].map(([b, s]) => `<div class="stat"><b>${b}</b><span>${s}</span></div>`).join('');
     $('#community').innerHTML = rows.length
-      ? rows.map(k => `<tr><td>${esc(k.donor)}</td><td><code>${esc(k.masked)}</code></td><td>${k.uses.toLocaleString()}</td><td><span class="status"><span class="dot ${k.status}"></span>${k.status}</span></td></tr>`).join('')
-      : `<tr><td colspan="4" class="empty">the pool is empty — be the first to donate.</td></tr>`;
+      ? rows.map(k => `<tr><td>${esc(k.donor)}</td><td>${esc((Models.PROVIDERS[k.provider] || {}).name || k.provider)}</td><td><code>${esc(k.masked)}</code></td><td>${k.uses.toLocaleString()}</td><td><span class="status"><span class="dot ${k.status}"></span>${k.status}</span></td></tr>`).join('')
+      : `<tr><td colspan="5" class="empty">the pool is empty — be the first to donate.</td></tr>`;
   }
 })();

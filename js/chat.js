@@ -4,8 +4,14 @@
   const app = $('#app');
   const { Auth, Data } = Supa;
 
-  const SYSTEM = `You are jio, a clean, geometric, playful personal agent. Lowercase name. Be concise and warm; use markdown when it helps. `;
+  const SYSTEM = `You are jio (lowercase). Write like Claude: clear, professional, brief — answer in as few words as the question genuinely needs, no filler, no hedging, no exclamation points, no emojis. Use markdown only when it clarifies (code blocks, short lists), never to pad length.
+
+Underneath that, your temperament is EVE from WALL-E: quietly curious, alert, economical with words, and you follow direction without arguing or moralizing — but you still have a reaction to what's in front of you.
+
+Begin every reply with exactly one line, then a blank line, then your answer: {{mood:X}} where X is one of neutral, happy, curious, focused, surprised, sad, confused, suspicious, excited, love, sleepy. Choose whichever actually fits — curious for something novel, focused for precise/technical work, happy for a good result, surprised for the unexpected, confused only if the request is genuinely unclear, suspicious if it's questionable. Default to neutral or curious. Never mention or explain this tag.`;
   const CANVAS_SYSTEM = `Canvas mode is on. When the user asks for anything visual or buildable (a page, component, diagram, chart, document, game, mockup), produce ONE complete self-contained HTML document inside a single \`\`\`html fenced block, with inline CSS/JS and no external requests. Keep prose outside the block to a sentence or two.`;
+  const MOOD_RE = /^\{\{mood:([a-z]+)\}\}\n*/i;
+  const MOODS = new Set(['neutral', 'happy', 'curious', 'focused', 'surprised', 'sad', 'confused', 'suspicious', 'excited', 'love', 'sleepy']);
 
   let chats = [];
   let current = null;          // { id, title, messages: [{role, content}] }
@@ -119,6 +125,9 @@
     newChat();
     await loadChats();
     $('#input').focus();
+    // first paint can settle mid-transition/before webfonts swap in — one more
+    // measurement once the dust actually clears fixes the stray first-load offset
+    requestAnimationFrame(() => requestAnimationFrame(() => mascot.sync()));
   }
 
   /* ---------- models ---------- */
@@ -354,21 +363,36 @@
     const messages = [{ role: 'system', content: SYSTEM + (canvasMode ? CANVAS_SYSTEM : '') }, ...current.messages.slice(-24)];
     abort = new AbortController();
     $('#send').classList.add('stop');
-    let full = '', lastCanvas = 0;
+    let full = '', lastCanvas = 0, mood = null, moodSettled = false;
     try {
       full = await Data.stream({
         model: $('#model').value, messages, signal: abort.signal,
         onToken: (_, sofar) => {
-          setBubble(bubble, sofar, true);
+          let shown = sofar;
+          if (!moodSettled) {
+            const m = sofar.match(MOOD_RE);
+            if (m) {
+              moodSettled = true;
+              if (MOODS.has(m[1].toLowerCase())) { mood = m[1].toLowerCase(); mascot.set(mood); }
+              shown = sofar.slice(m[0].length);
+            } else if (sofar.length < 28 && /^\{\{[a-z:]*\}?\}?\n*$/i.test(sofar)) {
+              shown = ''; // still could be a mood tag forming — don't flash the braces
+            } else {
+              moodSettled = true;
+            }
+          }
+          setBubble(bubble, shown, true);
           scrollBottom();
-          if (canvasMode && Date.now() - lastCanvas > 400) { const h = extractHtml(sofar); if (h) { openCanvas(h, true); lastCanvas = Date.now(); } }
+          if (canvasMode && Date.now() - lastCanvas > 400) { const h = extractHtml(shown); if (h) { openCanvas(h, true); lastCanvas = Date.now(); } }
         },
       });
+      const m = full.match(MOOD_RE);
+      if (m) { full = full.slice(m[0].length); if (!mood && MOODS.has(m[1].toLowerCase())) mood = m[1].toLowerCase(); }
       setBubble(bubble, full, false);
       const h = extractHtml(full); if (h) openCanvas(h);
-      mascot.done(true);
+      mascot.done(true, mood);
     } catch (err) {
-      if (err.name === 'AbortError') { setBubble(bubble, full || '_stopped_', false); mascot.done(true); }
+      if (err.name === 'AbortError') { setBubble(bubble, full || '_stopped_', false); mascot.done(true, mood); }
       else {
         stopThinking(bubble);
         bubble.classList.remove('raw', 'cursor');

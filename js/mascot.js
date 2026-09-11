@@ -25,8 +25,13 @@
 
       el.addEventListener('click', () => this.react('surprised', 900));
       this.ro = new ResizeObserver(() => this.sync());
+      // observe the wrap itself too — its own size/position can shift (empty-state
+      // centering settling, composer height changing) without any child firing a
+      // resize, which otherwise leaves the mascot stranded at a stale measurement
+      this.ro.observe(wrap);
       [...wrap.children].filter(c => c !== el).forEach(c => this.ro.observe(c));
       window.addEventListener('resize', () => this.sync());
+      if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => this.sync());
 
       this.idleTimer = setInterval(() => {
         if (this.busy || document.hidden || this.to) return;
@@ -125,9 +130,16 @@
       clearTimeout(this._reactT);
       this._reactT = setTimeout(() => this.eyes.set(this.mood = prev), ms);
     }
-    /* Working on it: a scanning sweep reads as doing something, not just pondering. */
-    work() { this.busy = true; clearTimeout(this._reactT); this.set('scanning'); }
-    done(ok = true) { this.busy = false; this.set('neutral'); this.react(ok ? 'happy' : 'sad', 1400); }
+    /* Working on it: focused reads as engaged/thinking, not a robotic sweep. */
+    work() { this.busy = true; clearTimeout(this._reactT); this.set('focused'); }
+    /* mood, if given (the reply's own {{mood:x}} tag), holds a while — an emotion
+       that snaps back instantly doesn't read as real — then eases to neutral. */
+    done(ok = true, mood = null) {
+      this.busy = false;
+      clearTimeout(this._reactT);
+      if (mood) { this.set(mood); this._reactT = setTimeout(() => this.set('neutral'), 2200); }
+      else { this.set('neutral'); this.react(ok ? 'happy' : 'sad', 1400); }
+    }
 
     /* Something questionable came in: eyes go huge — an "ayo?" double-take — hold
        a beat, shrink back down, then shake it off with a disapproving head-shake.

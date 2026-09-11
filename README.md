@@ -42,7 +42,10 @@ into the panel live.
 
 **Mascot.** One mascot, in the thread. It sits in the greeting, then glides into the avatar
 slot of each new reply — position, size, and corner radius tweening together, leaning into
-the direction of travel. It thinks while streaming and reacts to what happens.
+the direction of travel. It goes `focused` while a reply streams in, then reads a
+`{{mood:x}}` tag the model is instructed to lead every reply with (stripped before display)
+and holds that expression for a couple seconds before settling to neutral — the model
+picks its own reaction instead of the UI faking one.
 
 ## Schema
 

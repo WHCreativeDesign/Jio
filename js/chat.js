@@ -197,7 +197,6 @@
     mascot.moveTo(last || $('#greet-slot'), false);
   }
 
-  const EYE_MARK = '<svg viewBox="0 0 64 40" aria-hidden="true"><rect x="4" y="4" width="24" height="32" rx="8" fill="#fff"/><rect x="36" y="4" width="24" height="32" rx="8" fill="#fff"/></svg>';
   function appendMsg(role, content) {
     const d = document.createElement('div');
     d.className = `msg ${role}`;
@@ -205,13 +204,15 @@
       d.innerHTML = `<div class="bubble"></div>`;
       d.querySelector('.bubble').textContent = content;
     } else {
-      d.innerHTML = `<div class="who slot">${EYE_MARK}</div><div class="bubble"></div>`;
+      d.innerHTML = `<div class="who slot"></div><div class="bubble"></div>`;
       setBubble(d.querySelector('.bubble'), content);
     }
     $('#thread').appendChild(d);
     return d;
   }
+  const TYPING = '<div class="typing" aria-label="jio is working"><i></i><i></i><i></i></div>';
   function setBubble(bubble, text, streaming) {
+    if (streaming && !text) { bubble.innerHTML = TYPING; bubble.classList.remove('cursor'); return; }
     bubble.innerHTML = render(stripHtmlBlock(text));
     bubble.classList.toggle('cursor', !!streaming);
     const chip = bubble.querySelector('[data-open]');
@@ -260,8 +261,10 @@
 
     const node = appendMsg('assistant', '');
     const bubble = node.querySelector('.bubble');
+    setBubble(bubble, '', true);
+    scrollBottom();
     mascot.moveTo(node.querySelector('.who'));
-    mascot.think();
+    mascot.work();
 
     const messages = [{ role: 'system', content: SYSTEM + (canvasMode ? CANVAS_SYSTEM : '') }, ...current.messages.slice(-24)];
     abort = new AbortController();

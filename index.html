@@ -11,6 +11,9 @@
   <script>
     // a script failure must never leave a blank screen
     addEventListener('error', function (e) {
+      // resource load failures (a blocked font, say) are not script errors — they bubble
+      // here with a target element and must not raise a banner
+      if (e.target && e.target !== window) return;
       if (document.getElementById('boot-error')) return;
       var d = document.createElement('div');
       d.id = 'boot-error';

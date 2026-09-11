@@ -51,11 +51,17 @@
 
 * { box-sizing: border-box; }
 /* The page itself must never scroll — only .thread-wrap, .recents, .view-pool
-   and the canvas body do. If html/body can scroll independently, iOS Safari
-   computes 100dvh against its taller "chrome hidden" viewport instead of the
-   current one, and the fixed bottom bar (composer/toolbar) it draws on top
-   ends up sized wrong, overlapping the app's own bottom-anchored content. */
-html, body { height: 100%; height: 100dvh; overflow: hidden; overscroll-behavior: none; }
+   and the canvas body do. `overflow: hidden` alone only blocks user-driven
+   (wheel/touch) scrolling — a script-triggered scroll (focus() on an input,
+   Playwright/keyboard-nav's scrollIntoView, anything similar) can still move
+   html/body's scroll position, and with no scrollbar to fix it by hand that
+   shift is then stuck, dragging every fixed/absolute-positioned thing in the
+   app along with it. `position: fixed` removes html/body from flow entirely
+   so there is nothing for any kind of scroll to act on. */
+html, body {
+  position: fixed; inset: 0; width: 100%; height: 100%; height: 100dvh;
+  overflow: hidden; overscroll-behavior: none;
+}
 body {
   margin: 0;
   background: var(--bg);
@@ -98,7 +104,7 @@ canvas { display: block; }
 /* ---------- sidebar ---------- */
 .sidebar {
   background: var(--bg-side);
-  display: flex; flex-direction: column; overflow: hidden; min-width: 0; white-space: nowrap;
+  display: flex; flex-direction: column; overflow: hidden; min-width: 0; min-height: 0; white-space: nowrap;
 }
 .side-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 10px 18px; }
 .brand { text-decoration: none; }
@@ -163,7 +169,10 @@ canvas { display: block; }
 .avatar { width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; }
 
 /* ---------- main ---------- */
-.main { display: flex; flex-direction: column; min-width: 0; position: relative; height: 100%; }
+/* Grid items default to min-height: auto, which lets a tall child (the
+   accumulated thread) grow this past its 100% and push the whole app out
+   of the viewport instead of clipping and scrolling internally. */
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; height: 100%; }
 .topbar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; min-height: 50px; flex: none; }
 .only-collapsed { display: none; }
 .app.collapsed .only-collapsed { display: inline-grid; }
@@ -194,13 +203,11 @@ canvas { display: block; }
 .msg.user .bubble { background: var(--bg-user); border-radius: 16px; padding: 10px 16px; max-width: 78%; white-space: pre-wrap; }
 .msg.assistant { align-items: flex-start; }
 .msg.assistant .who {
-  width: 42px; height: 30px; border-radius: 10px; flex: none; margin-top: 1px;
-  /* the seat the mascot vacates: an empty, muted square */
-  background: var(--bg-hover); border: 1px solid var(--line);
-  transition: background-color 0.35s 0.15s, border-color 0.35s 0.15s;
+  /* just reserved space for the mascot to sit in when it's here — no box,
+     no border. It's eyes-only now; a leftover square once it moves on
+     read as a stray design artifact. */
+  width: 42px; height: 30px; flex: none; margin-top: 1px;
 }
-/* the live slot is the mascot's target: clear it instantly so there is never a double */
-.slot.live { background: transparent !important; border-color: transparent !important; transition: none !important; }
 
 .msg.assistant .bubble { flex: 1; min-width: 0; padding-top: 1px; }
 .msg.assistant .bubble > :first-child { margin-top: 0; }
@@ -353,7 +360,7 @@ canvas { display: block; }
 .status { display: inline-flex; align-items: center; gap: 6px; }
 
 /* ---------- canvas panel ---------- */
-.canvas-panel { border-left: 1px solid var(--line); background: var(--bg-side); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.canvas-panel { border-left: 1px solid var(--line); background: var(--bg-side); display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 .app:not(.canvas-open) .canvas-panel { display: none; }
 .canvas-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px 8px 12px; border-bottom: 1px solid var(--line); }
 .tabs { display: flex; gap: 2px; }

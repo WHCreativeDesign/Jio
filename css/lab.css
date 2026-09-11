@@ -32,45 +32,6 @@ canvas { display: block; }
 }
 .wordmark.small { font-size: 16px; letter-spacing: 0.28em; color: inherit; }
 
-/* ---------- gate ---------- */
-.gate {
-  position: fixed; inset: 0;
-  display: grid; place-items: center;
-  padding: 24px;
-}
-.gate-card {
-  width: min(360px, 100%);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 28px;
-  padding: 28px 24px 24px;
-  text-align: center;
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
-}
-.gate-card.shake { animation: shake 0.4s; }
-@keyframes shake {
-  20%, 60% { transform: translateX(-8px); }
-  40%, 80% { transform: translateX(8px); }
-}
-.gate-logo canvas { width: 220px; height: 110px; margin: 0 auto 6px; }
-.gate-sub { margin: 4px 0 18px; color: var(--mute); letter-spacing: 0.2em; text-transform: uppercase; font-size: 11px; }
-.pin-dots { display: flex; justify-content: center; gap: 14px; margin-bottom: 22px; }
-.pin-dots span {
-  width: 14px; height: 14px; border-radius: 50%;
-  border: 2px solid var(--line); transition: 0.15s;
-}
-.pin-dots span.on { background: var(--accent); border-color: var(--accent); }
-.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.keypad button {
-  height: 56px; border-radius: 16px;
-  background: var(--bg2); border: 1px solid var(--line);
-  font-size: 20px; font-weight: 600;
-  transition: 0.12s;
-}
-.keypad button:hover { border-color: var(--accent); }
-.keypad button:active { transform: scale(0.95); background: var(--line); }
-.keypad .key-ghost { background: transparent; color: var(--mute); }
-#pin-hidden { position: absolute; opacity: 0; pointer-events: none; width: 1px; height: 1px; }
 
 /* ---------- app ---------- */
 .app { min-height: 100%; display: flex; flex-direction: column; }
@@ -162,5 +123,4 @@ canvas { display: block; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 8px; }
   .card { padding: 8px 10px 10px; }
   .card-desc { display: none; }
-  .keypad button { height: 48px; }
 }

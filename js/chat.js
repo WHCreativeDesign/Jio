@@ -25,15 +25,27 @@
   const stripHtmlBlock = (t) => t.replace(HTML_BLOCK, '<div class="canvas-chip" data-open><span>▣</span><b>open in canvas</b></div>\n');
   const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  /* ---------- gate → auth → app ---------- */
-  JioGate.init(async () => {
-    await Auth.restore();
-    Auth.user() ? enter() : showAuth();
-  });
+  /* ---------- boot → auth → app ---------- */
+  // No PIN, no gate: the eyes just breathe on #boot while Auth.restore() settles
+  // (timed out and lock-hardened, so this can't hang) and we know which screen to show.
+  let bootEyes = new JioEyes($('#boot-eyes'), { size: 0.5, gap: 0.5, idle: true, track: false });
+  bootEyes.start();
+
+  (async () => {
+    try {
+      await Auth.restore();
+      Auth.user() ? enter() : showAuth();
+    } catch (e) {
+      // Auth.restore() already swallows its own failures; this is a last resort
+      // so a genuinely unexpected throw still reaches the sign-in screen.
+      showAuth();
+    }
+  })();
 
   let authEyes = null, authMode = 'in';
   function showAuth() {
-    Tween.run(() => { $('#auth').hidden = false; });
+    bootEyes.stop();
+    Tween.run(() => { $('#boot').hidden = true; $('#auth').hidden = false; });
     if (!authEyes) {
       authEyes = new JioEyes($('#auth-eyes'), { size: 0.5, gap: 0.5, idle: true, track: false });
       authEyes.start();
@@ -77,7 +89,8 @@
 
   /* ---------- boot ---------- */
   async function enter() {
-    Tween.run(() => { app.hidden = false; });
+    bootEyes.stop();
+    Tween.run(() => { $('#boot').hidden = true; $('#auth').hidden = true; app.hidden = false; });
     if (!booted) {
       booted = true;
       mascot = new Mascot($('#thread-wrap'), $('#mascot'));
@@ -127,7 +140,6 @@
     $('#new-chat').addEventListener('click', () => { newChat(); showView('chat'); $('#input').focus(); });
     $('#brand').addEventListener('click', (e) => { e.preventDefault(); showView('chat'); });
     $('#canvas-nav').addEventListener('click', () => { showView('chat'); Tween.run(() => app.classList.toggle('canvas-open')); });
-    $('#lock').addEventListener('click', JioGate.lock);
     $('#me').addEventListener('click', async () => { await Auth.signOut(); location.reload(); });
     $('#clear-chats').addEventListener('click', async () => {
       if (!chats.length) return;

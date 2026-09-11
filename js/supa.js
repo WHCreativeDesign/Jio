@@ -26,24 +26,39 @@
     return err?.message || 'something went wrong';
   };
 
+  /* Races a promise against a plain timeout. A hung network call or an internal
+     supabase-js deadlock must never leave the app stuck loading forever. */
+  function withTimeout(promise, ms, label) {
+    let t;
+    const timeout = new Promise((_, reject) => { t = setTimeout(() => reject(new Error(`${label} timed out`)), ms); });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
+  }
+
   const Auth = {
     onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     async restore() {
-      const { data } = await db.auth.getSession();
-      user = data.session?.user || null;
+      try {
+        const { data } = await withTimeout(db.auth.getSession(), 8000, 'getSession');
+        user = data.session?.user || null;
+      } catch (e) {
+        // could not confirm a session in time — proceed logged out rather than hang
+        user = null;
+      }
       return user;
     },
     user: () => user,
     handle: () => (user?.user_metadata?.handle) || user?.email?.split('@')[0] || 'friend',
     async signIn(email, password) {
-      const { data, error } = await db.auth.signInWithPassword({ email: email.trim(), password });
+      const { data, error } = await withTimeout(
+        db.auth.signInWithPassword({ email: email.trim(), password }), 15000, 'sign in');
       if (error) throw new Error(nice(error));
       return data.user;
     },
     async signUp(email, password) {
       email = email.trim();
       const handle = email.split('@')[0];
-      const { data, error } = await db.auth.signUp({ email, password, options: { data: { handle } } });
+      const { data, error } = await withTimeout(
+        db.auth.signUp({ email, password, options: { data: { handle } } }), 15000, 'sign up');
       if (error) throw new Error(nice(error));
       // no session means the project still requires email confirmation
       if (!data.session) { const e = new Error('account made — confirm your email, then sign in'); e.pending = true; throw e; }

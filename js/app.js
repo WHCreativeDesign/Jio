@@ -2,8 +2,6 @@
   'use strict';
   const $ = (s) => document.querySelector(s);
   const app = $('#app');
-  $('#lock').addEventListener('click', JioGate.lock);
-
 
   /* ---------- lab ---------- */
   let eyes, booted = false;
@@ -74,5 +72,5 @@
   }
 
 
-  JioGate.init(() => { app.hidden = false; boot(); });
+  boot();
 })();

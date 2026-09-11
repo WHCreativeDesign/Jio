@@ -29,9 +29,9 @@
   };
   const ORDER = ['groq', 'nvidia', 'gemini', 'cohere'];
 
-  // qwen3.8-27b is the one jio aims at everywhere; auto falls to each provider's
-  // closest equivalent when groq is out of headroom.
-  const SEED = ['auto', 'groq:qwen/qwen3.8-27b', 'groq:openai/gpt-oss-120b'];
+  // The picker offers providers, not models: each one resolves server-side to
+  // whatever it currently serves closest to qwen3.8-27b, and auto walks them all.
+  const SEED = [{ provider: 'groq', best: 'qwen/qwen3.8-27b' }];
 
   const PRETTY = {
     'qwen/qwen3.8-27b': 'Qwen3.8 27B',
@@ -64,17 +64,14 @@
       .replace(/\bIt\b/g, 'IT');
   }
 
-  /* Group ids into [provider, ids[]] pairs for the dropdown's optgroups. The
-     server already returns each provider's list best-first, so order is kept. */
-  function group(ids) {
-    const by = new Map();
-    ids.filter(id => id !== 'auto').forEach(id => {
-      const p = providerOf(id);
-      if (!by.has(p)) by.set(p, []);
-      by.get(p).push(id);
-    });
-    return ORDER.filter(p => by.has(p)).map(p => [p, by.get(p)]);
+  const name = (p) => (PROVIDERS[p] || {}).name || p;
+
+  /* "groq/qwen/qwen3.8-27b" (the X-Jio-Route header) -> "groq · Qwen3.8 27B" */
+  function route(r) {
+    const i = r.indexOf('/');
+    if (i === -1) return r;
+    return `${name(r.slice(0, i)).toLowerCase()} · ${label(r.slice(i + 1))}`;
   }
 
-  global.Models = { PROVIDERS, ORDER, SEED, label, group, providerOf, modelOf };
+  global.Models = { PROVIDERS, ORDER, SEED, label, name, route, providerOf, modelOf };
 })(window);

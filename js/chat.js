@@ -10,8 +10,18 @@ Underneath that, your temperament is EVE from WALL-E: quietly curious, alert, ec
 
 Begin every reply with exactly one line, then a blank line, then your answer: {{mood:X}} where X is one of neutral, happy, curious, focused, surprised, sad, confused, suspicious, excited, love, sleepy. Choose whichever actually fits — curious for something novel, focused for precise/technical work, happy for a good result, surprised for the unexpected, confused only if the request is genuinely unclear, suspicious if it's questionable. Default to neutral or curious. Never mention or explain this tag.`;
   const CANVAS_SYSTEM = `Canvas mode is on. When the user asks for anything visual or buildable (a page, component, diagram, chart, document, game, mockup), produce ONE complete self-contained HTML document inside a single \`\`\`html fenced block, with inline CSS/JS and no external requests. Keep prose outside the block to a sentence or two.`;
-  const MOOD_RE = /^\{\{mood:([a-z]+)\}\}\n*/i;
   const MOODS = new Set(['neutral', 'happy', 'curious', 'focused', 'surprised', 'sad', 'confused', 'suspicious', 'excited', 'love', 'sleepy']);
+  // Models put the tag wherever they like — often at the end despite being asked
+  // for it first — so find it anywhere and strip every occurrence.
+  const MOOD_ONE = /\{\{\s*mood\s*:\s*([a-z]+)\s*\}\}/i;
+  const MOOD_ALL = /\s*\{\{\s*mood\s*:\s*[a-z]+\s*\}\}\s*/gi;
+  const PARTIAL = /\{\{[^{}]*$/;   // a tag still arriving, char by char
+  const moodIn = (s) => {
+    const m = s.match(MOOD_ONE);
+    const v = m && m[1].toLowerCase();
+    return MOODS.has(v) ? v : null;
+  };
+  const stripMood = (s) => s.replace(MOOD_ALL, '\n\n').trim();
 
   let chats = [];
   let current = null;          // { id, title, messages: [{role, content}] }
@@ -112,7 +122,7 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
     if (!booted) {
       booted = true;
       mascot = new Mascot($('#thread-wrap'), $('#mascot'));
-      setModels(Models.SEED);
+      setProviders(Models.SEED);
       $('#model').addEventListener('change', () => { try { localStorage.setItem('jio.model', $('#model').value); } catch (e) {} });
       refreshModels();
       setupComposer(); setupSidebar(); setupCanvas(); setupPool();
@@ -127,43 +137,47 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
     $('#input').focus();
   }
 
-  /* ---------- models ---------- */
-  function setModels(ids) {
+  /* ---------- providers ----------
+     You pick a provider, not a model. Each one resolves server-side to whatever
+     it currently serves closest to qwen3.8-27b, so the list can't go stale and
+     nobody has to know which snapshot name is current this week. */
+  function setProviders(list) {
     const sel = $('#model');
     let want = sel.value;
     try { want = localStorage.getItem('jio.model') || want; } catch (e) {}
     sel.innerHTML = '';
-    // auto is first and the default: it aims at qwen3.8-27b and falls to each
-    // other provider's closest equivalent when groq has no headroom left
     const auto = document.createElement('option');
     auto.value = 'auto'; auto.textContent = 'Auto';
+    auto.title = 'best available, across every provider with headroom';
     sel.appendChild(auto);
-    Models.group(ids).forEach(([p, list]) => {
-      const g = document.createElement('optgroup');
-      g.label = (Models.PROVIDERS[p] || {}).name || p;
-      list.forEach(id => {
-        const o = document.createElement('option');
-        o.value = id; o.textContent = Models.label(id);
-        g.appendChild(o);
-      });
-      sel.appendChild(g);
+    list.forEach(({ provider, best }) => {
+      const o = document.createElement('option');
+      o.value = provider;
+      o.textContent = Models.name(provider);
+      if (best) o.title = Models.label(best);
+      sel.appendChild(o);
     });
-    // a remembered model the provider has since retired must not stick around
-    sel.value = [...sel.querySelectorAll('option')].some(o => o.value === want) ? want : 'auto';
+    // a remembered choice whose provider has since dropped out must not stick
+    sel.value = [...sel.options].some(o => o.value === want) ? want : 'auto';
     try { localStorage.setItem('jio.model', sel.value); } catch (e) {}
   }
   async function refreshModels() {
     try {
-      const ids = await Data.models();
-      if (ids.length) setModels(ids);
-    } catch (e) { /* seed list stands */ }
+      const list = await Data.providers();
+      if (list.length) setProviders(list);
+    } catch (e) { /* seed stands */ }
   }
-  /* Summarising history shouldn't cost as much as the conversation itself. */
+  /* Summarising history shouldn't cost as much as the conversation itself:
+     gemini and cohere's best are the cheap fast ones of this bunch. */
   function cheapModel() {
-    const ids = [...$('#model').querySelectorAll('option')].map(o => o.value).filter(v => v !== 'auto');
-    return ids.find(v => /flash-lite|-8b|mini|small|lite/i.test(v))
-        || ids.find(v => /flash|instant|nano/i.test(v))
-        || 'auto';
+    const have = [...$('#model').options].map(o => o.value);
+    return ['gemini', 'cohere', 'groq'].find(p => have.includes(p)) || 'auto';
+  }
+  /* Auto can land anywhere, so say where it actually went. */
+  function showRoute(r) {
+    $('#fineprint').textContent = r
+      ? `jio can make mistakes. answered by ${Models.route(r)}.`
+      : 'jio can make mistakes. runs on donated keys.';
   }
 
   /* ---------- sidebar ---------- */
@@ -291,17 +305,19 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
      that happens once, at the end) so each new piece can blur in on its own,
      rather than the whole bubble re-parsing and popping on every token. */
   function renderStreamingChunk(bubble, text) {
-    if (bubble.querySelector('.thinking')) { bubble.innerHTML = ''; bubble._rawLen = 0; }
+    if (bubble.querySelector('.thinking')) { bubble.innerHTML = ''; bubble._raw = ''; }
     bubble.classList.add('raw');
-    const prevLen = bubble._rawLen || 0;
-    const delta = text.slice(prevLen);
+    // what's shown can shrink or shift when a mood tag is stripped out of the
+    // middle of the stream, so only append when it's genuinely a continuation
+    if (!text.startsWith(bubble._raw || '')) { bubble.innerHTML = ''; bubble._raw = ''; }
+    const delta = text.slice((bubble._raw || '').length);
     if (delta) {
       const span = document.createElement('span');
       span.className = 'tok';
       span.textContent = delta;
       bubble.appendChild(span);
     }
-    bubble._rawLen = text.length;
+    bubble._raw = text;
   }
 
   function setBubble(bubble, text, streaming) {
@@ -315,7 +331,7 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
     // final settle: one real markdown parse, replacing the raw streamed text
     stopThinking(bubble);
     bubble.classList.remove('cursor', 'raw');
-    bubble._rawLen = 0;
+    bubble._raw = '';
     bubble.innerHTML = render(stripHtmlBlock(text));
     const chip = bubble.querySelector('[data-open]');
     if (chip) chip.addEventListener('click', () => openCanvas(extractHtml(text)));
@@ -346,7 +362,7 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
         messages: [{ role: 'system', content: SUMMARIZE }, { role: 'user', content: prior + transcript }],
         onToken: () => {},
       });
-      const text = out.replace(MOOD_RE, '').trim();
+      const text = stripMood(out);
       if (!text) return;
       current.summary = text;
       current.upto = msgs.length - KEEP_RECENT;
@@ -420,32 +436,23 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
     ];
     abort = new AbortController();
     $('#send').classList.add('stop');
-    let full = '', lastCanvas = 0, mood = null, moodSettled = false;
+    let full = '', lastCanvas = 0, mood = null, route = '';
     try {
       full = await Data.stream({
         model: $('#model').value, messages, signal: abort.signal,
+        onRoute: (r) => { route = r; },
         onToken: (_, sofar) => {
-          let shown = sofar;
-          if (!moodSettled) {
-            const m = sofar.match(MOOD_RE);
-            if (m) {
-              moodSettled = true;
-              if (MOODS.has(m[1].toLowerCase())) { mood = m[1].toLowerCase(); mascot.set(mood); }
-              shown = sofar.slice(m[0].length);
-            } else if (sofar.length < 28 && /^\{\{[a-z:]*\}?\}?\n*$/i.test(sofar)) {
-              shown = ''; // still could be a mood tag forming — don't flash the braces
-            } else {
-              moodSettled = true;
-            }
-          }
+          if (!mood) { const m = moodIn(sofar); if (m) { mood = m; mascot.set(m); } }
+          const shown = stripMood(sofar).replace(PARTIAL, '');
           setBubble(bubble, shown, true);
           scrollBottom();
           if (canvasMode && Date.now() - lastCanvas > 400) { const h = extractHtml(shown); if (h) { openCanvas(h, true); lastCanvas = Date.now(); } }
         },
       });
-      const m = full.match(MOOD_RE);
-      if (m) { full = full.slice(m[0].length); if (!mood && MOODS.has(m[1].toLowerCase())) mood = m[1].toLowerCase(); }
+      if (!mood) mood = moodIn(full);
+      full = stripMood(full);
       setBubble(bubble, full, false);
+      showRoute(route);
       const h = extractHtml(full); if (h) openCanvas(h);
       mascot.done(true, mood);
     } catch (err) {

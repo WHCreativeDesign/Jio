@@ -25,17 +25,18 @@ back that up in case anything upstream is ever missed.
 OpenAI-compatible endpoints, so one code path serves all four. A model travels as
 `provider:model-id`.
 
-**Models.** Every one of these vendors retires model names on their own schedule, so
-nothing is hardcoded: the edge function asks each provider what it actually serves, filters
-out everything that isn't a text chat model (embedders, rerankers, TTS, video, image), and
-merges the lists. A remembered model that has since been decommissioned is dropped on load.
-`js/models.js` carries only a seed list for first paint, display names, and each provider's
-key format.
+**You pick a provider, not a model.** The picker is Auto, Groq, NVIDIA, Gemini, Cohere —
+nothing else. Every one of these vendors retires model names on their own schedule, so
+there's no list to go stale: the edge function asks each provider what it actually serves,
+drops everything that isn't a text chat model (embedders, rerankers, TTS, video, image),
+and resolves each provider to whichever of its models is closest to `qwen/qwen3.8-27b` —
+the best of this bunch for code. Today that's Qwen3.8 27B on Groq, DeepSeek V4 Flash on
+NVIDIA, Gemini Flash, and Command A on Cohere, but none of those names are written down
+anywhere; they're matched live.
 
-**Auto.** The default. jio aims at `qwen/qwen3.8-27b` — the best of these for code — and
-when Groq has no headroom left it falls to each other provider's closest equivalent rather
-than failing. Pinning a specific model instead keeps it pinned; predictability beats
-cleverness once you've chosen.
+**Auto.** The default, and the point of the whole thing: it walks every provider that still
+has headroom, each at its best, so the pool keeps answering after any single one taps out.
+Whichever route served a reply is named under the composer.
 
 **Chat.** The browser never talks to a provider. It calls the `chat` edge function with the
 user's access token; the function picks a donated key server-side, streams the provider
@@ -69,7 +70,8 @@ into the panel live.
 **Mascot.** One mascot, in the thread. It sits in the greeting, then glides into the avatar
 slot of each new reply — position, size, and corner radius tweening together, leaning into
 the direction of travel. It goes `focused` while a reply streams in, then reads a
-`{{mood:x}}` tag the model is instructed to lead every reply with (stripped before display)
+`{{mood:x}}` tag the model is asked to lead every reply with — stripped wherever it lands,
+since models cheerfully put it at the end instead —
 and holds that expression for a couple seconds before settling to neutral — the model
 picks its own reaction instead of the UI faking one.
 
@@ -109,7 +111,7 @@ css/lab.css      eye lab styles
 js/eyes.js       JioEyes canvas engine
 js/tween.js      Tween.run() — wraps a DOM mutation in a View Transition
 js/supa.js       Supabase client: auth (timeout-guarded) + data + streaming
-js/models.js     providers, model labels, key formats
+js/models.js     providers, model labels, route labels, key formats
 js/mascot.js     in-thread mascot
 js/chat.js       app orchestration, canvas, pool UI
 js/app.js        eye lab

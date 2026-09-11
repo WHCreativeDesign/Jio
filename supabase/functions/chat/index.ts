@@ -146,39 +146,50 @@ function ladder(provider: Provider, ids: string[]): string[] {
 
 type Plan = { provider: Provider; models: string[]; keys: Key[] };
 
-/** Where this request can be served from, in order of preference. A pinned
-    model stays pinned — predictability beats cleverness once someone chose.
-    "auto" gets the whole ladder across every provider that still has keys. */
-async function plan(model: string): Promise<Plan[]> {
-  if (model && model !== "auto") {
-    const i = model.indexOf(":");
-    const p = i === -1 ? "groq" : model.slice(0, i);
-    const id = i === -1 ? model : model.slice(i + 1);
+/** Every model this provider can stand in with, best first. */
+async function planFor(p: Provider): Promise<Plan | null> {
+  const keys = await poolKeys(p);
+  if (!keys.length) return null;
+  const ids = await catalogue(p, keys);
+  if (!ids.length) return null;
+  return { provider: p, models: ladder(p, ids).slice(0, 4), keys };
+}
+
+/** Where this request can be served from, in order of preference.
+    "auto"              — every provider, each at its best
+    "groq"              — that provider, best model first, others as backup
+    "groq:some-model"   — pinned exactly; predictability once someone chose */
+async function plan(choice: string): Promise<Plan[]> {
+  if (choice && choice.includes(":")) {
+    const i = choice.indexOf(":");
+    const p = choice.slice(0, i), id = choice.slice(i + 1);
     if (!isProvider(p)) return [];
     const keys = await poolKeys(p);
     return keys.length ? [{ provider: p, models: [id], keys }] : [];
   }
+  if (isProvider(choice)) {
+    const one = await planFor(choice);
+    return one ? [one] : [];
+  }
   const plans: Plan[] = [];
   for (const p of AUTO) {
-    const keys = await poolKeys(p);
-    if (!keys.length) continue;
-    const ids = await catalogue(p, keys);
-    if (!ids.length) continue;
-    plans.push({ provider: p, models: ladder(p, ids).slice(0, 4), keys });
+    const one = await planFor(p);
+    if (one) plans.push(one);
   }
   return plans;
 }
 
-async function listModels() {
-  const out: { id: string; provider: string; model: string }[] = [];
+/** The picker offers providers, not a wall of model names — each provider
+    resolves to whatever it currently serves that's closest to qwen3.8-27b. */
+async function listProviders() {
+  const out: { provider: Provider; best: string }[] = [];
   await Promise.all(AUTO.map(async (p) => {
-    const keys = await poolKeys(p);
-    if (!keys.length) return;
-    const ids = await catalogue(p, keys);
-    for (const id of ladder(p, ids)) out.push({ id: `${p}:${id}`, provider: p, model: id });
+    const one = await planFor(p);
+    if (one) out.push({ provider: p, best: one.models[0] });
   }));
+  out.sort((a, b) => AUTO.indexOf(a.provider) - AUTO.indexOf(b.provider));
   if (!out.length) return json({ error: "no provider could be reached with any pooled key", code: "pool_exhausted" }, 503);
-  return json({ models: out });
+  return json({ providers: out });
 }
 
 Deno.serve(async (req: Request) => {
@@ -195,7 +206,7 @@ Deno.serve(async (req: Request) => {
     let body: { action?: string; model?: string; messages?: unknown[]; max_tokens?: number };
     try { body = await req.json(); } catch { return json({ error: "bad request body" }, 400); }
 
-    if (body.action === "models") return await listModels();
+    if (body.action === "models") return await listProviders();
 
     const { messages } = body;
     if (!Array.isArray(messages) || !messages.length) return json({ error: "messages are required" }, 400);

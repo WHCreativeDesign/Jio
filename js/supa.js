@@ -136,10 +136,10 @@
       };
     },
 
-    /* Every provider's live model list, merged by the proxy, so the dropdown
-       never goes stale and never offers a model the pool can't actually serve.
-       Ids come back as "provider:model-id". */
-    async models() {
+    /* Which providers the pool can actually serve right now, each with the model
+       it currently resolves to. The picker offers these rather than a wall of
+       model names that goes stale every time a vendor retires a snapshot. */
+    async providers() {
       const { data: { session } } = await db.auth.getSession();
       if (!session) return [];
       const res = await fetch(`${URL}/functions/v1/chat`, {
@@ -148,8 +148,8 @@
         body: JSON.stringify({ action: 'models' }),
       });
       if (!res.ok) return [];
-      const { models } = await res.json();
-      return (models || []).map(m => m.id);
+      const { providers } = await res.json();
+      return providers || [];
     },
 
     /* ---------- chat completion, proxied through the edge function ---------- */

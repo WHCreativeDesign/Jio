@@ -79,9 +79,8 @@
       b.innerHTML = `<canvas width="120" height="60"></canvas><div class="card-name"><kbd>${KEYS[i] || ''}</kbd>${n}</div><div class="card-desc">${DESC[n] || ''}</div>`;
       b.addEventListener('click', () => pick(n));
       grid.appendChild(b);
-      const mini = new JioEyes(b.querySelector('canvas'), { size: 0.55, gap: 0.45, track: false, autoBlink: false, glow: 0.5 });
-      mini.set(n); mini.color = eyes.color; mini.start();
-      b._mini = mini;
+      const mini = new JioEyes(b.querySelector('canvas'), { size: 0.55, gap: 0.45, track: false, autoBlink: false });
+      mini.set(n); mini.start();
     });
 
     function pick(n) {
@@ -103,14 +102,6 @@
     $('#track').addEventListener('change', (e) => { eyes.track = e.target.checked; if (!eyes.track) eyes.look(0, 0); });
     $('#autoblink').addEventListener('change', (e) => eyes.autoBlink = e.target.checked);
     $('#idle').addEventListener('change', (e) => { eyes.idle = e.target.checked; if (!eyes.idle) eyes.look(0, 0); });
-
-    $('#palette').addEventListener('click', (e) => {
-      const b = e.target.closest('button'); if (!b) return;
-      [...$('#palette').children].forEach(x => x.classList.toggle('on', x === b));
-      eyes.color = b.dataset.c;
-      [...grid.children].forEach(c => c._mini.color = b.dataset.c);
-      document.documentElement.style.setProperty('--accent', b.dataset.c);
-    });
 
     let tour = null;
     $('#tour').addEventListener('click', (e) => {

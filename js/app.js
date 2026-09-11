@@ -36,8 +36,11 @@
     });
 
     function pick(n) {
-      eyes.set(n); label.textContent = n;
-      [...grid.children].forEach(c => c.classList.toggle('on', c.dataset.n === n));
+      eyes.set(n);
+      Tween.run(() => {
+        label.textContent = n;
+        [...grid.children].forEach(c => c.classList.toggle('on', c.dataset.n === n));
+      });
     }
     pick('neutral');
 

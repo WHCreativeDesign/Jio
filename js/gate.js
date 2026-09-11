@@ -34,7 +34,7 @@
         setTimeout(() => { card.classList.remove('shake'); entered = ''; renderDots(); eyes.set('neutral'); }, 500);
       }
     }
-    function unlock() { gate.hidden = true; eyes.stop(); onUnlock(); }
+    function unlock() { Tween.run(() => { gate.hidden = true; }); eyes.stop(); onUnlock(); }
 
     $('#keypad').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) press(b.dataset.k); });
     hidden.addEventListener('input', () => { entered = hidden.value.replace(/\D/g, '').slice(0, 4); hidden.value = ''; renderDots(); if (entered.length === 4) setTimeout(check, 180); });

@@ -33,7 +33,7 @@
 
   let authEyes = null, authMode = 'in';
   function showAuth() {
-    $('#auth').hidden = false;
+    Tween.run(() => { $('#auth').hidden = false; });
     if (!authEyes) {
       authEyes = new JioEyes($('#auth-eyes'), { size: 0.5, gap: 0.5, idle: true, track: false });
       authEyes.start();
@@ -65,7 +65,7 @@
         await (authMode === 'up' ? Auth.signUp(email, pass) : Auth.signIn(email, pass));
         authEyes.set('happy');
         note.textContent = '';
-        setTimeout(() => { $('#auth').hidden = true; authEyes.stop(); enter(); }, 350);
+        setTimeout(() => { Tween.run(() => { $('#auth').hidden = true; }); authEyes.stop(); enter(); }, 350);
       } catch (err) {
         note.textContent = err.message;
         note.className = err.pending ? 'note ok' : 'note err';
@@ -77,7 +77,7 @@
 
   /* ---------- boot ---------- */
   async function enter() {
-    app.hidden = false;
+    Tween.run(() => { app.hidden = false; });
     if (!booted) {
       booted = true;
       mascot = new Mascot($('#thread-wrap'), $('#mascot'));
@@ -121,11 +121,12 @@
   /* ---------- sidebar ---------- */
   function setupSidebar() {
     $('#theme').addEventListener('click', () => theme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'));
-    $('#collapse').addEventListener('click', () => app.classList.add('collapsed'));
-    $('#expand').addEventListener('click', () => app.classList.remove('collapsed'));
+    $('#collapse').addEventListener('click', () => Tween.run(() => app.classList.add('collapsed')));
+    $('#expand').addEventListener('click', () => Tween.run(() => app.classList.remove('collapsed')));
+    $('#scrim').addEventListener('click', () => Tween.run(() => app.classList.add('collapsed')));
     $('#new-chat').addEventListener('click', () => { newChat(); showView('chat'); $('#input').focus(); });
     $('#brand').addEventListener('click', (e) => { e.preventDefault(); showView('chat'); });
-    $('#canvas-nav').addEventListener('click', () => { showView('chat'); app.classList.toggle('canvas-open'); });
+    $('#canvas-nav').addEventListener('click', () => { showView('chat'); Tween.run(() => app.classList.toggle('canvas-open')); });
     $('#lock').addEventListener('click', JioGate.lock);
     $('#me').addEventListener('click', async () => { await Auth.signOut(); location.reload(); });
     $('#clear-chats').addEventListener('click', async () => {
@@ -137,11 +138,13 @@
     if (matchMedia('(max-width: 900px)').matches) app.classList.add('collapsed');
   }
   function showView(v) {
-    $('#view-chat').hidden = v !== 'chat';
-    $('#view-pool').hidden = v !== 'pool';
-    document.querySelectorAll('.nav-item[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === v));
+    Tween.run(() => {
+      $('#view-chat').hidden = v !== 'chat';
+      $('#view-pool').hidden = v !== 'pool';
+      document.querySelectorAll('.nav-item[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === v));
+      if (matchMedia('(max-width: 900px)').matches) app.classList.add('collapsed');
+    });
     if (v === 'chat') mascot.sync();
-    if (matchMedia('(max-width: 900px)').matches) app.classList.add('collapsed');
     if (v === 'pool') renderPool();
   }
 
@@ -235,8 +238,10 @@
     });
     document.querySelectorAll('.seg-btn').forEach(b => b.addEventListener('click', () => {
       canvasMode = b.dataset.mode === 'canvas';
-      document.querySelectorAll('.seg-btn').forEach(x => x.classList.toggle('on', x === b));
-      app.classList.toggle('canvas-open', canvasMode);
+      Tween.run(() => {
+        document.querySelectorAll('.seg-btn').forEach(x => x.classList.toggle('on', x === b));
+        app.classList.toggle('canvas-open', canvasMode);
+      });
       mascot.react(canvasMode ? 'excited' : 'neutral', 1000);
     }));
   }
@@ -313,7 +318,7 @@
       $('#canvas-frame').hidden = t.dataset.tab !== 'preview';
       $('#canvas-code').hidden = t.dataset.tab !== 'code';
     }));
-    $('#canvas-close').addEventListener('click', () => app.classList.remove('canvas-open'));
+    $('#canvas-close').addEventListener('click', () => Tween.run(() => app.classList.remove('canvas-open')));
     $('#canvas-copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(canvasHtml); mascot.react('happy', 800); } catch (e) {} });
     $('#canvas-open').addEventListener('click', () => {
       const url = URL.createObjectURL(new Blob([canvasHtml], { type: 'text/html' }));
@@ -323,7 +328,7 @@
   function openCanvas(html, partial) {
     if (html == null) return;
     canvasHtml = html;
-    app.classList.add('canvas-open');
+    if (!app.classList.contains('canvas-open')) Tween.run(() => app.classList.add('canvas-open'));
     $('#canvas-empty').hidden = true;
     $('#canvas-code').textContent = html;
     if (!partial || html.length % 7 === 0) $('#canvas-frame').srcdoc = html;

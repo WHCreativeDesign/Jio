@@ -317,19 +317,74 @@ canvas { display: block; }
   transform: translate(-50%, -50%); transform-origin: center; will-change: transform;
 }
 
+/* ---------- morph transitions ---------- */
+/* Elements that persist across a Tween.run() mutation keep this identity, so the
+   browser interpolates their geometry (width, position) instead of a jump-cut —
+   the sidebar sliding to 0, the canvas panel opening, one view crossing into another. */
+.sidebar { view-transition-name: sidebar; }
+.canvas-panel { view-transition-name: canvas-panel; }
+.scrim { view-transition-name: scrim; }
+::view-transition-group(*) { animation-duration: 0.32s; animation-timing-function: cubic-bezier(0.22, 0.8, 0.24, 1); }
+::view-transition-group(root) { animation-duration: 0.22s; }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*) { animation-duration: 0.001s; }
+}
+
+.scrim {
+  position: fixed; inset: 0; z-index: 29; background: rgba(0, 0, 0, 0.4);
+  border: 0; padding: 0; cursor: default; opacity: 0; pointer-events: none; transition: opacity 0.25s;
+}
+.app:not(.collapsed) .scrim { opacity: 1; pointer-events: auto; }
+@media (min-width: 901px) { .scrim { display: none; } }
+
 /* ---------- responsive ---------- */
 @media (max-width: 900px) {
   .app, .app.canvas-open, .app.collapsed.canvas-open { grid-template-columns: 0 1fr 0; }
-  .app:not(.collapsed) .sidebar { position: fixed; inset: 0 25% 0 0; z-index: 30; box-shadow: var(--shadow); }
-  .only-collapsed { display: inline-grid; }
-  .app.canvas-open .canvas-panel { position: fixed; inset: 50px 0 0 0; z-index: 25; }
+  .app:not(.collapsed) .sidebar {
+    position: fixed; inset: 0 auto 0 0; width: min(320px, 82vw); z-index: 30; box-shadow: var(--shadow);
+    padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
+  }
+  .app.canvas-open .canvas-panel {
+    position: fixed; inset: 0 0 0 0; z-index: 25;
+    padding-top: env(safe-area-inset-top);
+  }
+  .canvas-head { padding-top: max(8px, env(safe-area-inset-top)); }
+
+  /* touch targets grow without the icons themselves looking oversized */
+  .icon-btn { width: 40px; height: 40px; }
+  .icon-btn.sm { width: 32px; height: 32px; }
+  .nav-item, .recent { padding-top: 10px; padding-bottom: 10px; }
+  .tab, .seg-btn { padding-top: 7px; padding-bottom: 7px; }
+
+  .topbar { padding: max(10px, env(safe-area-inset-top)) 10px 10px; }
+  .chat-title { font-size: 13px; }
+
   .pool-grid { grid-template-columns: 1fr; }
-  .greeting { gap: 12px; padding-bottom: 22px; }
-  .greet-text { font-size: 26px; }
+  .pool { padding: 16px 16px 40px; }
+  .pool h1 { font-size: 30px; }
+  .card { padding: 16px; }
+
+  .greeting { gap: 12px; padding-bottom: 22px; flex-wrap: wrap; justify-content: center; text-align: center; }
+  .greet-text { font-size: 24px; }
   .greet-eyes { width: 52px; height: 34px; }
   .mascot { width: 52px; height: 34px; }
-  .composer-wrap { padding: 0 12px 12px; }
+
+  .composer-wrap { padding: 0 10px max(10px, env(safe-area-inset-bottom)); }
+  .composer { border-radius: 18px; padding: 10px 10px 8px; }
+  .composer-bar { flex-wrap: wrap; row-gap: 10px; }
+  .composer-right { flex: 1 1 100%; justify-content: space-between; }
+  .seg-btn { font-size: 13px; padding-left: 10px; padding-right: 10px; }
+  .model-select { font-size: 13px; }
+  .model-select select { padding-left: 6px; padding-right: 20px; max-width: 58vw; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+  .fineprint { display: none; }
+
   .thread { padding: 8px 14px 28px; }
+  .msg.user .bubble { max-width: 88%; }
+}
+
+@media (max-width: 380px) {
+  .seg-btn { padding-left: 8px; padding-right: 8px; }
+  .model-select select { max-width: 46vw; }
 }
 
 /* ---------- auth ---------- */

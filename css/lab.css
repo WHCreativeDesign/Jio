@@ -146,7 +146,21 @@ canvas { display: block; }
 .panel-foot { display: flex; align-items: center; gap: 14px; margin-top: 16px; flex-wrap: wrap; }
 .hint { color: var(--mute); font-size: 12px; }
 
+::view-transition-group(*) { animation-duration: 0.28s; animation-timing-function: cubic-bezier(0.22, 0.8, 0.24, 1); }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*) { animation-duration: 0.001s; }
+}
+
 @media (max-width: 600px) {
   .stage { height: 40vh; }
   .hint { display: none; }
+  .topbar { padding: 12px 14px; gap: 10px; }
+  .topbar-right { gap: 10px 16px; }
+  .toggle input { width: 17px; height: 17px; }
+  .stage-wrap { padding: 14px; }
+  .panel { padding: 0 14px 24px; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 8px; }
+  .card { padding: 8px 10px 10px; }
+  .card-desc { display: none; }
+  .keypad button { height: 48px; }
 }

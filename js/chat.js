@@ -81,9 +81,9 @@
     if (!booted) {
       booted = true;
       mascot = new Mascot($('#thread-wrap'), $('#mascot'));
-      Groq.MODELS.forEach(m => { const o = document.createElement('option'); o.value = m.id; o.textContent = m.name; $('#model').appendChild(o); });
-      try { const m = localStorage.getItem('jio.model'); if (m) $('#model').value = m; } catch (e) {}
+      setModels(Groq.SEED);
       $('#model').addEventListener('change', () => { try { localStorage.setItem('jio.model', $('#model').value); } catch (e) {} });
+      refreshModels();
       setupComposer(); setupSidebar(); setupCanvas(); setupPool();
     }
     const h = new Date().getHours();
@@ -94,6 +94,28 @@
     newChat();
     await loadChats();
     $('#input').focus();
+  }
+
+  /* ---------- models ---------- */
+  function setModels(ids) {
+    const sel = $('#model');
+    let want = sel.value;
+    try { want = localStorage.getItem('jio.model') || want; } catch (e) {}
+    sel.innerHTML = '';
+    Groq.sort(ids).forEach(id => {
+      const o = document.createElement('option');
+      o.value = id; o.textContent = Groq.label(id);
+      sel.appendChild(o);
+    });
+    // a remembered model that Groq has since retired must not stick around
+    sel.value = ids.includes(want) ? want : (sel.options[0] ? sel.options[0].value : '');
+    try { localStorage.setItem('jio.model', sel.value); } catch (e) {}
+  }
+  async function refreshModels() {
+    try {
+      const ids = await Data.models();
+      if (ids.length) setModels(ids);
+    } catch (e) { /* seed list stands */ }
   }
 
   /* ---------- sidebar ---------- */

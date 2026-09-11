@@ -111,6 +111,20 @@
       };
     },
 
+    /* Groq's live model list, fetched through the proxy so the dropdown never goes stale. */
+    async models() {
+      const { data: { session } } = await db.auth.getSession();
+      if (!session) return [];
+      const res = await fetch(`${URL}/functions/v1/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}`, apikey: PUBLISHABLE_KEY },
+        body: JSON.stringify({ action: 'models' }),
+      });
+      if (!res.ok) return [];
+      const { models } = await res.json();
+      return (models || []).map(m => m.id);
+    },
+
     /* ---------- chat completion, proxied through the edge function ---------- */
     async stream({ model, messages, signal, onToken }) {
       const { data: { session } } = await db.auth.getSession();

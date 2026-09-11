@@ -1,57 +1,9 @@
 (function () {
   'use strict';
-  const PIN = '0529';
-  const KEY = 'jio.unlocked';
-
   const $ = (s) => document.querySelector(s);
-  const gate = $('#gate'), app = $('#app');
+  const app = $('#app');
+  $('#lock').addEventListener('click', JioGate.lock);
 
-  /* ---------- gate ---------- */
-  const gateEyes = new JioEyes($('#gate-eyes'), { size: 0.5, gap: 0.5, idle: true, track: false });
-  gateEyes.start();
-
-  let entered = '';
-  const dots = [...$('#pin-dots').children];
-  const hidden = $('#pin-hidden');
-
-  function renderDots() { dots.forEach((d, i) => d.classList.toggle('on', i < entered.length)); }
-  function press(k) {
-    if (k === 'del') { entered = entered.slice(0, -1); gateEyes.set('neutral'); }
-    else if (k === 'ok') { check(); return; }
-    else if (entered.length < 4) { entered += k; gateEyes.set(entered.length === 4 ? 'excited' : 'curious'); }
-    renderDots();
-    if (entered.length === 4) setTimeout(check, 180);
-  }
-  function check() {
-    if (entered === PIN) {
-      gateEyes.set('happy');
-      try { sessionStorage.setItem(KEY, '1'); } catch (e) {}
-      setTimeout(unlock, 450);
-    } else {
-      gateEyes.set(entered.length ? 'angry' : 'confused');
-      gate.querySelector('.gate-card').classList.add('shake');
-      setTimeout(() => { gate.querySelector('.gate-card').classList.remove('shake'); entered = ''; renderDots(); gateEyes.set('neutral'); }, 500);
-    }
-  }
-  $('#keypad').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) press(b.dataset.k); });
-  hidden.addEventListener('input', () => { entered = hidden.value.replace(/\D/g, '').slice(0, 4); hidden.value = ''; renderDots(); if (entered.length === 4) setTimeout(check, 180); });
-  document.addEventListener('keydown', (e) => {
-    if (!gate.hidden) {
-      if (/^\d$/.test(e.key)) press(e.key);
-      else if (e.key === 'Backspace') press('del');
-      else if (e.key === 'Enter') press('ok');
-    }
-  });
-
-  function unlock() {
-    gate.hidden = true; app.hidden = false; gateEyes.stop();
-    boot();
-  }
-  function lock() {
-    try { sessionStorage.removeItem(KEY); } catch (e) {}
-    location.reload();
-  }
-  $('#lock').addEventListener('click', lock);
 
   /* ---------- lab ---------- */
   let eyes, booted = false;
@@ -111,14 +63,13 @@
     });
 
     document.addEventListener('keydown', (e) => {
-      if (app.hidden || e.target === hidden) return;
+      if (app.hidden) return;
       if (e.key === ' ') { e.preventDefault(); eyes.blink(); return; }
       const i = KEYS.indexOf(e.key.toLowerCase());
       if (i >= 0 && names[i]) pick(names[i]);
     });
   }
 
-  let unlocked = false;
-  try { unlocked = sessionStorage.getItem(KEY) === '1'; } catch (e) {}
-  if (unlocked) unlock();
+
+  JioGate.init(() => { app.hidden = false; boot(); });
 })();

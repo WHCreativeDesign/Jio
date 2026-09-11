@@ -78,15 +78,10 @@ canvas { display: block; }
 .gate-logo { width: 120px; height: 72px; margin: 0 auto 16px; background: #000; border-radius: 18px; display: grid; place-items: center; }
 .gate-logo canvas { width: 110px; height: 55px; }
 .gate-sub { margin: 6px 0 18px; color: var(--fg-3); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; }
-.pin-dots { display: flex; justify-content: center; gap: 12px; margin-bottom: 20px; }
-.pin-dots span { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--line-2); transition: 0.15s; }
-.pin-dots span.on { background: var(--fg); border-color: var(--fg); }
-.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.keypad button { height: 52px; border-radius: 14px; background: var(--bg); border: 1px solid var(--line); font-size: 19px; font-weight: 500; transition: 0.12s; }
-.keypad button:hover { border-color: var(--line-2); background: var(--bg-hover); }
-.keypad button:active { transform: scale(0.96); }
-.keypad .key-ghost { background: transparent; color: var(--fg-3); border-color: transparent; }
-#pin-hidden { position: absolute; opacity: 0; pointer-events: none; width: 1px; height: 1px; }
+
+.boot-mark { animation: boot-breathe 1.8s ease-in-out infinite; }
+@keyframes boot-breathe { 0%, 100% { opacity: 0.55; transform: scale(0.97); } 50% { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .boot-mark { animation: none; } }
 
 /* ---------- app frame ---------- */
 .app { display: grid; grid-template-columns: 280px 1fr 0; height: 100vh; height: 100dvh; transition: grid-template-columns 0.25s ease; }

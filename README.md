@@ -6,12 +6,20 @@ Static front end on GitHub Pages, Supabase for accounts, storage, and the model 
 
 ## Pages
 
-- `index.html` — PIN gate → sign in → chat, canvas mode, key pool
-- `lab.html` — eye lab: every expression the `JioEyes` engine can make
+- `index.html` — sign in → chat, canvas mode, key pool
+- `lab.html` — eye lab: every expression the `JioEyes` engine can make, public, no login
 
 ## How it works
 
-**Accounts.** Email + password, no 2FA. A trigger mirrors each new user into `profiles`.
+**Accounts.** Email + password, no 2FA, no PIN in front of it. A trigger mirrors each new
+user into `profiles`.
+
+**Boot never hangs.** `Auth.restore()` (and `signIn`/`signUp`) race the real Supabase call
+against a plain `setTimeout`, so a call that can't complete — a blocked or dead network, or
+supabase-js's own known `getSession()` deadlock on a stale persisted session — falls through
+to the sign-in screen instead of spinning forever. A `#boot` splash (just the eyes,
+breathing) covers the gap; a 12s last-resort watchdog and an `unhandledrejection` listener
+back that up in case anything upstream is ever missed.
 
 **Models.** Groq retires models on a schedule, so the dropdown is not hardcoded — it asks
 the edge function for Groq's live `/models` list and filters out non-chat entries. A
@@ -70,8 +78,8 @@ jio tells the user to check their inbox first.
 css/app.css      app styles (Claude-shaped dark + light)
 css/lab.css      eye lab styles
 js/eyes.js       JioEyes canvas engine
-js/gate.js       shared PIN gate
-js/supa.js       Supabase client: auth + data + streaming
+js/tween.js      Tween.run() — wraps a DOM mutation in a View Transition
+js/supa.js       Supabase client: auth (timeout-guarded) + data + streaming
 js/groq.js       model list
 js/mascot.js     in-thread mascot
 js/chat.js       app orchestration, canvas, pool UI

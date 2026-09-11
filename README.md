@@ -1,40 +1,42 @@
-# JIO
+# jio
 
-Geometric, clean, futuristic, playful personal agent.
+A clean, geometric, playful personal agent. The mascot is just eyes.
 
-This repo currently holds the **eye lab** — a static demo of JIO's expressive eyes, in the lineage of Anki Vector / Cozmo / EMO.
+Static site, no build step. Deployed to GitHub Pages on every push to `main`.
 
-## Live
+## Pages
 
-Deployed to GitHub Pages on every push to `main` (`.github/workflows/pages.yml`).
+- `index.html` — the app: PIN gate, Claude-shaped chat shell, canvas mode, key pool
+- `lab.html` — eye lab: every expression the `JioEyes` engine can make
+
+## How it works
+
+- **Chat** streams from Groq's OpenAI-compatible endpoint straight from the browser. Chats live in `localStorage`.
+- **Canvas mode** asks the model for a single self-contained ` ```html ` block and renders it in a sandboxed iframe beside the thread (preview / code tabs, copy, open in new tab).
+- **Key pool** — jio runs on donated free Groq keys, picked round-robin. A key that 429s rests, a 401 is dropped. Right now donated keys are stored in *your* browser only; the community table is placeholder data until a backend lands.
+- **Mascot** hops to whatever has focus, tracks the cursor, thinks while streaming, and reacts to what happens.
+
+## Files
+
+```
+css/app.css      app styles (cream + blue, dark theme)
+css/lab.css      eye lab styles
+js/eyes.js       JioEyes canvas engine
+js/gate.js       shared PIN gate
+js/groq.js       streaming client + model list
+js/pool.js       key pool (local storage + placeholder community rows)
+js/mascot.js     hopping mascot
+js/chat.js       app orchestration, canvas, pool UI
+js/app.js        eye lab
+js/vendor/       marked, DOMPurify
+```
 
 ## Run locally
-
-Any static server works:
 
 ```
 python3 -m http.server 8765
 ```
 
-Open `http://localhost:8765`. The site is behind a PIN gate (client-side, session-scoped).
+## Fonts
 
-## Structure
-
-- `index.html` — PIN gate + eye lab
-- `js/eyes.js` — `JioEyes` engine: rounded-rect eyes with per-corner radii, angled upper/lower lids, gaze + parallax, auto-blink, idle wander, and per-expression FX (bounce, pulse, beat, shake, tremble, spin, tears, zz, glitch, scan, orbit)
-- `js/app.js` — gate logic, expression grid, tour, palette, keyboard shortcuts
-- `css/style.css`
-
-## Expressions
-
-neutral · happy · laugh · excited · love · sad · cry · angry · rage · surprised · scared · sleepy · sleeping · wink · suspicious · confused · curious · thinking · focused · bored · smirk · proud · dizzy · dead · glitch · scanning · loading
-
-## Using the engine
-
-```js
-const eyes = new JioEyes(canvas, { color: '#38f2ff', size: 0.36 });
-eyes.start();
-eyes.set('happy');
-eyes.look(0.4, -0.2);   // -1..1
-eyes.blink();
-```
+The UI asks for `Anthropic Sans` / `Anthropic Serif` first and falls back to system sans + Newsreader (Google Fonts). Those brand fonts aren't redistributable, so the fallback is what most people will see.

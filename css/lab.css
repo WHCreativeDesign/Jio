@@ -30,7 +30,7 @@ canvas { display: block; }
   font-size: 34px;
   text-indent: 0.32em;
 }
-.wordmark.small { font-size: 16px; letter-spacing: 0.28em; }
+.wordmark.small { font-size: 16px; letter-spacing: 0.28em; color: inherit; }
 
 /* ---------- gate ---------- */
 .gate {

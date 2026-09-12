@@ -96,7 +96,7 @@ canvas { display: block; }
 @media (prefers-reduced-motion: reduce) { .boot-mark { animation: none; } }
 
 /* ---------- app frame ---------- */
-.app { display: grid; grid-template-columns: 280px 1fr 0; height: 100vh; height: 100dvh; transition: grid-template-columns 0.25s ease; }
+.app { display: grid; grid-template-columns: 280px 1fr 0; height: 100vh; height: 100dvh; transition: grid-template-columns 0.32s var(--ease); }
 .app.collapsed { grid-template-columns: 0 1fr 0; }
 .app.canvas-open { grid-template-columns: 280px 1fr minmax(380px, 46%); }
 .app.collapsed.canvas-open { grid-template-columns: 0 1fr minmax(380px, 50%); }
@@ -162,11 +162,39 @@ canvas { display: block; }
 .empty-note { padding: 4px 12px; color: var(--fg-3); font-size: 13px; }
 
 .side-foot { display: flex; align-items: center; gap: 4px; padding: 8px 12px 12px 10px; }
-.me { display: flex; align-items: center; gap: 9px; font-size: 14px; flex: 1; min-width: 0; padding: 6px 8px; border-radius: 9px; }
-.me:hover { background: var(--bg-hover); }
+.me-wrap { position: relative; flex: 1; min-width: 0; }
+.me { display: flex; align-items: center; gap: 9px; font-size: 14px; width: 100%; min-width: 0; padding: 6px 8px; border-radius: 9px; }
+.me:hover, .me[aria-expanded="true"] { background: var(--bg-hover); }
 .me-name { overflow: hidden; text-overflow: ellipsis; }
-.me-plan { color: var(--fg-3); font-size: 13px; }
+.me-chevron { margin-left: auto; flex: none; color: var(--fg-3); transition: transform 0.18s var(--ease); }
+.me[aria-expanded="true"] .me-chevron { transform: rotate(180deg); }
 .avatar { width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; }
+
+/* Dropup: anchored to the bottom of the sidebar, so it opens upward into
+   free space instead of off the bottom of the screen. */
+.me-menu {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 40;
+  background: var(--bg-elev); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: var(--shadow); padding: 6px;
+  transform-origin: left bottom;
+  animation: menu-in 0.16s var(--ease) both;
+}
+@keyframes menu-in {
+  from { opacity: 0; transform: scale(0.95) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) { .me-menu { animation: none; } }
+.me-menu-item {
+  display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 10px;
+  border-radius: 8px; font-size: 13.5px; color: var(--fg); text-align: left;
+  transition: background-color 0.14s var(--ease);
+}
+.me-menu-item:hover { background: var(--bg-hover); }
+.me-menu-item svg { flex: none; color: var(--fg-2); }
+.me-menu-version {
+  padding: 8px 10px 4px; margin-top: 2px; border-top: 1px solid var(--line);
+  font-size: 11.5px; color: var(--fg-3); letter-spacing: 0.02em;
+}
 
 /* ---------- main ---------- */
 /* Grid items default to min-height: auto, which lets a tall child (the
@@ -380,7 +408,11 @@ canvas { display: block; }
 
 /* ---------- canvas panel ---------- */
 .canvas-panel { border-left: 1px solid var(--line); background: var(--bg-side); display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
-.app:not(.canvas-open) .canvas-panel { display: none; }
+/* desktop only: the panel lives in a 0-width grid track when closed, so there's
+   nothing to click through anyway, but display:none keeps it out of tab order.
+   Mobile (below) keeps it always rendered, off-screen, so it has something to
+   slide from. */
+@media (min-width: 901px) { .app:not(.canvas-open) .canvas-panel { display: none; } }
 .canvas-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px 8px 12px; border-bottom: 1px solid var(--line); }
 .tabs { display: flex; gap: 2px; }
 .tab { padding: 5px 12px; border-radius: 999px; font-size: 13.5px; color: var(--fg-3); transition: background-color 0.16s var(--ease), color 0.16s var(--ease); }
@@ -407,13 +439,13 @@ canvas { display: block; }
 }
 
 /* ---------- morph transitions ---------- */
-/* Elements that persist across a Tween.run() mutation keep this identity, so the
-   browser interpolates their geometry (width, position) instead of a jump-cut —
-   the sidebar sliding to 0, the canvas panel opening, one view crossing into another. */
-.sidebar { view-transition-name: sidebar; }
-.canvas-panel { view-transition-name: canvas-panel; }
-.scrim { view-transition-name: scrim; }
-::view-transition-group(*) { animation-duration: 0.32s; animation-timing-function: cubic-bezier(0.22, 0.8, 0.24, 1); }
+/* One view crossing into another (chat <-> pool, boot -> auth -> app) still
+   rides the View Transitions API via Tween.run() for a clean crossfade.
+   The sidebar and canvas panel deliberately do NOT carry a view-transition-name:
+   View Transitions animates named elements by scaling a snapshot between their
+   old and new geometry, which for a track resize reads as the panel zooming
+   rather than sliding. Their own `transition: grid-template-columns` (desktop)
+   and `transform` (mobile, below) do a real layout slide instead. */
 ::view-transition-group(root) { animation-duration: 0.22s; }
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*) { animation-duration: 0.001s; }
@@ -429,14 +461,25 @@ canvas { display: block; }
 /* ---------- responsive ---------- */
 @media (max-width: 900px) {
   .app, .app.canvas-open, .app.collapsed.canvas-open { grid-template-columns: 0 1fr 0; }
-  .app:not(.collapsed) .sidebar {
+
+  /* Both panels are always in the layout here (position: fixed, full height)
+     so a real `transform` transition has something to slide — a grid track
+     that's permanently 0-width on mobile can't animate a slide on its own. */
+  .sidebar {
     position: fixed; inset: 0 auto 0 0; width: min(320px, 82vw); z-index: 30; box-shadow: var(--shadow);
     padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
+    transform: translateX(-100%);
+    transition: transform 0.3s var(--ease);
   }
-  .app.canvas-open .canvas-panel {
-    position: fixed; inset: 0 0 0 0; z-index: 25;
+  .app:not(.collapsed) .sidebar { transform: translateX(0); }
+
+  .canvas-panel {
+    display: flex; position: fixed; inset: 0 0 0 0; z-index: 25;
     padding-top: env(safe-area-inset-top);
+    transform: translateX(100%);
+    transition: transform 0.3s var(--ease);
   }
+  .app.canvas-open .canvas-panel { transform: translateX(0); }
   .canvas-head { padding-top: max(8px, env(safe-area-inset-top)); }
 
   /* touch targets grow without the icons themselves looking oversized */
@@ -498,3 +541,8 @@ canvas { display: block; }
 .auth-card .note { text-align: center; min-height: 18px; margin-top: 10px; }
 .auth-swap { font-size: 13px; color: var(--fg-3); margin: 14px 0 0; }
 .auth-swap button { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+
+/* last in the cascade so it wins over the mobile transform transitions too */
+@media (prefers-reduced-motion: reduce) {
+  .app, .sidebar, .canvas-panel { transition: none; }
+}

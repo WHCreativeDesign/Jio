@@ -227,14 +227,21 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
       theme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
       mascot.syncTheme();
     });
-    $('#collapse').addEventListener('click', () => Tween.run(() => app.classList.add('collapsed')));
-    $('#expand').addEventListener('click', () => Tween.run(() => app.classList.remove('collapsed')));
-    $('#scrim').addEventListener('click', () => Tween.run(() => app.classList.add('collapsed')));
+    // The sidebar and canvas panel are plain CSS Grid tracks with their own
+    // `transition: grid-template-columns` — a real layout reflow that slides
+    // and pushes the rest of the app out of the way. Wrapping these in
+    // Tween.run() used to run them through the View Transitions API instead,
+    // which captures a snapshot and scales it between sizes — that's the
+    // "zooming" instead of sliding. Plain class toggles let the CSS transition
+    // do the animating.
+    $('#collapse').addEventListener('click', () => app.classList.add('collapsed'));
+    $('#expand').addEventListener('click', () => app.classList.remove('collapsed'));
+    $('#scrim').addEventListener('click', () => app.classList.add('collapsed'));
     $('#new-chat').addEventListener('click', () => { newChat(); showView('chat'); $('#input').focus(); });
     $('#new-chat-top').addEventListener('click', () => { newChat(); showView('chat'); $('#input').focus(); });
     $('#brand').addEventListener('click', (e) => { e.preventDefault(); showView('chat'); });
-    $('#canvas-nav').addEventListener('click', () => showView('chat', () => app.classList.toggle('canvas-open')));
-    $('#me').addEventListener('click', async () => { await Auth.signOut(); location.reload(); });
+    $('#canvas-nav').addEventListener('click', () => { showView('chat'); app.classList.toggle('canvas-open'); });
+    setupMeMenu();
     $('#clear-chats').addEventListener('click', async () => {
       if (!chats.length) return;
       await Promise.all(chats.map(c => Data.deleteChat(c.id)));
@@ -243,21 +250,28 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     document.querySelectorAll('.nav-item[data-view]').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
     if (matchMedia('(max-width: 900px)').matches) app.classList.add('collapsed');
   }
-  function showView(v, extra) {
-    // one startViewTransition per gesture — a second call while the first is
-    // still in flight throws "already in progress", which surfaces to the user
-    // as Chrome's "Transition failed, try reloading" banner. #canvas-nav used
-    // to trigger this on every click by calling showView() then a second
-    // Tween.run() right after; extra folds any such follow-up into the same transition.
+  function showView(v) {
     Tween.run(() => {
       $('#view-chat').hidden = v !== 'chat';
       $('#view-pool').hidden = v !== 'pool';
       document.querySelectorAll('.nav-item[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === v));
       if (matchMedia('(max-width: 900px)').matches) app.classList.add('collapsed');
-      if (extra) extra();
     });
     if (v === 'chat') mascot.sync();
     if (v === 'pool') renderPool();
+  }
+
+  /* ---------- account menu ---------- */
+  const VERSION = '0.1.0';
+  function setupMeMenu() {
+    const btn = $('#me'), menu = $('#me-menu');
+    $('#me-version').textContent = `jio v${VERSION}`;
+    const close = () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); };
+    const open = () => { menu.hidden = false; btn.setAttribute('aria-expanded', 'true'); };
+    btn.addEventListener('click', (e) => { e.stopPropagation(); menu.hidden ? open() : close(); });
+    document.addEventListener('click', (e) => { if (!menu.hidden && !e.target.closest('.me-wrap')) close(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menu.hidden) { close(); btn.focus(); } });
+    $('#signout').addEventListener('click', async () => { await Auth.signOut(); location.reload(); });
   }
 
   async function loadChats() {
@@ -446,10 +460,8 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     });
     document.querySelectorAll('.seg-btn').forEach(b => b.addEventListener('click', () => {
       canvasMode = b.dataset.mode === 'canvas';
-      Tween.run(() => {
-        document.querySelectorAll('.seg-btn').forEach(x => x.classList.toggle('on', x === b));
-        app.classList.toggle('canvas-open', canvasMode);
-      });
+      document.querySelectorAll('.seg-btn').forEach(x => x.classList.toggle('on', x === b));
+      app.classList.toggle('canvas-open', canvasMode);
       mascot.react(canvasMode ? 'excited' : 'neutral', 1000);
     }));
   }
@@ -566,7 +578,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
       $('#canvas-frame').hidden = t.dataset.tab !== 'preview';
       $('#canvas-code').hidden = t.dataset.tab !== 'code';
     }));
-    $('#canvas-close').addEventListener('click', () => Tween.run(() => app.classList.remove('canvas-open')));
+    $('#canvas-close').addEventListener('click', () => app.classList.remove('canvas-open'));
     $('#canvas-copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(canvasHtml); mascot.react('happy', 800); } catch (e) {} });
     $('#canvas-open').addEventListener('click', () => {
       const url = URL.createObjectURL(new Blob([canvasHtml], { type: 'text/html' }));
@@ -576,7 +588,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
   function openCanvas(html, partial) {
     if (html == null) return;
     canvasHtml = html;
-    if (!app.classList.contains('canvas-open')) Tween.run(() => app.classList.add('canvas-open'));
+    if (!app.classList.contains('canvas-open')) app.classList.add('canvas-open');
     $('#canvas-empty').hidden = true;
     $('#canvas-code').textContent = html;
     if (!partial || html.length % 7 === 0) $('#canvas-frame').srcdoc = html;

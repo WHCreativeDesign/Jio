@@ -203,7 +203,7 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authErr } = await admin.auth.getUser(token);
     if (authErr || !user) return json({ error: "session expired — sign in again" }, 401);
 
-    let body: { action?: string; model?: string; messages?: unknown[]; max_tokens?: number };
+    let body: { action?: string; model?: string; messages?: unknown[]; max_tokens?: number; temperature?: number };
     try { body = await req.json(); } catch { return json({ error: "bad request body" }, 400); }
 
     if (body.action === "models") return await listProviders();
@@ -230,7 +230,9 @@ Deno.serve(async (req: Request) => {
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${key.api_key}` },
               body: JSON.stringify({
                 model, messages, stream: true,
-                temperature: 0.7,
+                // canvas edit-mode asks for a lower temperature: sticking to
+                // the literal SEARCH/REPLACE format matters more than variety
+                temperature: Math.min(Math.max(body.temperature ?? 0.7, 0), 1),
                 max_tokens: Math.min(body.max_tokens ?? 4096, 8192),
               }),
             });

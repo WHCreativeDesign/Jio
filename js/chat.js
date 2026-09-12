@@ -12,6 +12,45 @@ Begin every reply with exactly one line, then a blank line, then your answer: {{
 
 When asked to write code: lead with the code. Do not precede it with a "design choices" essay, a numbered list of decisions, or a walkthrough of your reasoning — that reads as thinking out loud, not an answer. If a choice truly needs explaining, one short line after the code is enough; most of the time none is needed at all.`;
   const CANVAS_SYSTEM = `Canvas mode is on. When the user asks for anything visual or buildable (a page, component, diagram, chart, document, game, mockup), produce ONE complete self-contained HTML document inside a single \`\`\`html fenced block, with inline CSS/JS and no external requests. Keep prose outside the block to a sentence or two.`;
+  /* Once there's already canvas code, resending the whole file every turn is
+     what was driving the huge, slow, budget-blowing responses ("keeps looping
+     thinking"). Ask for a diff instead — the current source goes in as its own
+     system message (see ask()) so it survives context compression intact. */
+  const CANVAS_EDIT_SYSTEM = `Canvas mode is on, and there is already canvas code — given below as a system message — that the user is iterating on. Do NOT rewrite or resend the whole file, and do NOT use a tool call, function-call syntax, or any JSON/XML structure — plain text only. Make only the changes asked for, expressed as one or more edit blocks in exactly this form:
+
+<<<<<<< SEARCH
+exact existing lines
+=======
+new lines
+>>>>>>> REPLACE
+
+Example — changing a title from "Old" to "New":
+
+<<<<<<< SEARCH
+  <h1>Old</h1>
+=======
+  <h1>New</h1>
+>>>>>>> REPLACE
+
+A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the current code exactly, character for character, copied verbatim — never paraphrased. Keep any prose to one short line before the blocks. Do not output a \`\`\`html block unless the request truly requires rewriting the entire file from scratch.`;
+  const EDIT_HUNK = /<<<<<<<\s*SEARCH\r?\n([\s\S]*?)\r?\n=======\r?\n([\s\S]*?)\r?\n>>>>>>>\s*REPLACE/g;
+  const stripEditBlocks = (t) => t
+    .replace(/```(?:edit|diff)?\s*\n?<<<<<<<\s*SEARCH[\s\S]*?>>>>>>>\s*REPLACE\s*\n?```/g, '')
+    .replace(EDIT_HUNK, '')
+    .trim();
+  /* Applies each SEARCH/REPLACE hunk to base in order. A SEARCH that doesn't
+     match exactly (whitespace drift, the model misquoting) is skipped rather
+     than corrupting the file — reported back as a failed count. */
+  function applyEdits(base, text) {
+    let html = base, applied = 0, failed = 0, m;
+    EDIT_HUNK.lastIndex = 0;
+    while ((m = EDIT_HUNK.exec(text))) {
+      const [, search, replace] = m;
+      if (html.includes(search)) { html = html.replace(search, replace); applied++; }
+      else failed++;
+    }
+    return { html, applied, failed };
+  }
   const MOODS = new Set(['neutral', 'happy', 'curious', 'focused', 'surprised', 'sad', 'confused', 'suspicious', 'excited', 'love', 'sleepy']);
   // Models put the tag wherever they like — often at the end despite being asked
   // for it first — so find it anywhere and strip every occurrence.
@@ -255,6 +294,7 @@ When asked to write code: lead with the code. Do not precede it with a "design c
     $('#chat-title').textContent = '';
     renderRecents();
     mascot.moveTo($('#greet-slot'), false);
+    resetCanvas();
   }
   async function openChat(id) {
     const meta = chats.find(c => c.id === id); if (!meta) return;
@@ -262,6 +302,7 @@ When asked to write code: lead with the code. Do not precede it with a "design c
     $('#thread').innerHTML = '';
     $('#chat-title').textContent = meta.title;
     renderRecents();
+    resetCanvas();
     let msgs = [];
     try { msgs = await Data.messages(id); } catch (e) {}
     current.messages = msgs;
@@ -328,7 +369,7 @@ When asked to write code: lead with the code. Do not precede it with a "design c
     bubble._raw = text;
   }
 
-  function setBubble(bubble, text, streaming) {
+  function setBubble(bubble, text, streaming, canvasSnapshot) {
     if (streaming) {
       if (!text) { startThinking(bubble); return; }
       stopThinking(bubble);
@@ -342,7 +383,9 @@ When asked to write code: lead with the code. Do not precede it with a "design c
     bubble._raw = '';
     bubble.innerHTML = render(stripHtmlBlock(text));
     const chip = bubble.querySelector('[data-open]');
-    if (chip) chip.addEventListener('click', () => openCanvas(extractHtml(text)));
+    // an edit-mode reply has no ```html block of its own to re-extract later —
+    // canvasSnapshot is the resulting file, captured at the time this ran
+    if (chip) chip.addEventListener('click', () => openCanvas(canvasSnapshot !== undefined ? canvasSnapshot : extractHtml(text)));
   }
   /* ---------- context compression ----------
      Every turn resends the history, so a long chat quietly multiplies what the
@@ -436,9 +479,14 @@ When asked to write code: lead with the code. Do not precede it with a "design c
     scrollBottom();
     mascot.afterJudge(() => { mascot.moveTo(node.querySelector('.who')); mascot.work(); });
 
+    // once there's already canvas code, ask for a diff against it instead of
+    // the whole file every turn — smaller, faster responses, and it stops
+    // context compression from ever having to deal with a repeated giant blob
+    const editMode = canvasMode && !!canvasHtml;
     await compress();
     const messages = [
-      { role: 'system', content: SYSTEM + (canvasMode ? CANVAS_SYSTEM : '') },
+      { role: 'system', content: SYSTEM + (canvasMode ? (editMode ? CANVAS_EDIT_SYSTEM : CANVAS_SYSTEM) : '') },
+      ...(editMode ? [{ role: 'system', content: `Current canvas code:\n\n\`\`\`html\n${canvasHtml}\n\`\`\`` }] : []),
       ...(current.summary ? [{ role: 'system', content: `Earlier in this conversation, compressed:\n${current.summary}` }] : []),
       ...current.messages.slice(current.upto).slice(-24),
     ];
@@ -448,9 +496,13 @@ When asked to write code: lead with the code. Do not precede it with a "design c
     try {
       full = await Data.stream({
         model: $('#model').value, messages, signal: abort.signal,
+        temperature: editMode ? 0.2 : 0.7,
         onRoute: (r) => { route = r; },
         onToken: (_, sofar) => {
           if (!mood) { const m = moodIn(sofar); if (m) { mood = m; mascot.set(m); } }
+          // an edit-mode reply is diff markup, not prose — nothing worth
+          // streaming live; the thinking indicator stays up until it's ready
+          if (editMode) return;
           const shown = stripMood(sofar).replace(PARTIAL, '');
           setBubble(bubble, shown, true);
           scrollBottom();
@@ -459,9 +511,27 @@ When asked to write code: lead with the code. Do not precede it with a "design c
       });
       if (!mood) mood = moodIn(full);
       full = stripMood(full);
-      setBubble(bubble, full, false);
+      if (editMode) {
+        const { html: edited, applied, failed } = applyEdits(canvasHtml, full);
+        const fullBlock = extractHtml(full);
+        let display = stripEditBlocks(full), snapshot;
+        if (applied) {
+          openCanvas(edited);
+          snapshot = edited;
+          display += `\n\n<div class="canvas-chip" data-open><span>▣</span><b>${applied} edit${applied > 1 ? 's' : ''} applied</b></div>\n`;
+        } else if (fullBlock) {
+          // ignored the diff instruction and resent the whole file — still works
+          openCanvas(fullBlock);
+          snapshot = fullBlock;
+          display = stripHtmlBlock(full);
+        }
+        if (failed) display += `\n\n_${failed} edit${failed > 1 ? 's' : ''} couldn't be matched to the current code — try again or rephrase._`;
+        setBubble(bubble, display || full, false, snapshot);
+      } else {
+        setBubble(bubble, full, false);
+        const h = extractHtml(full); if (h) openCanvas(h);
+      }
       showRoute(route);
-      const h = extractHtml(full); if (h) openCanvas(h);
       mascot.done(true, mood);
     } catch (err) {
       if (err.name === 'AbortError') { setBubble(bubble, full || '_stopped_', false); mascot.done(true, mood); }
@@ -510,6 +580,15 @@ When asked to write code: lead with the code. Do not precede it with a "design c
     $('#canvas-empty').hidden = true;
     $('#canvas-code').textContent = html;
     if (!partial || html.length % 7 === 0) $('#canvas-frame').srcdoc = html;
+  }
+  /* A new or freshly-opened chat starts with no canvas of its own — otherwise
+     an edit-mode request would diff against the PREVIOUS chat's code. */
+  function resetCanvas() {
+    canvasHtml = '';
+    app.classList.remove('canvas-open');
+    $('#canvas-empty').hidden = false;
+    $('#canvas-code').textContent = '';
+    $('#canvas-frame').srcdoc = '';
   }
 
   /* ---------- key pool ---------- */

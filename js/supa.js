@@ -153,14 +153,14 @@
     },
 
     /* ---------- chat completion, proxied through the edge function ---------- */
-    async stream({ model, messages, signal, onToken, onRoute }) {
+    async stream({ model, messages, signal, onToken, onRoute, temperature }) {
       const { data: { session } } = await db.auth.getSession();
       if (!session) throw new Error('session expired — sign in again');
 
       const res = await fetch(`${URL}/functions/v1/chat`, {
         method: 'POST', signal,
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}`, apikey: PUBLISHABLE_KEY },
-        body: JSON.stringify({ model, messages }),
+        body: JSON.stringify({ model, messages, temperature }),
       });
       if (!res.ok) {
         let msg = `${res.status}`, code = '';

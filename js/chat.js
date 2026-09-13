@@ -316,6 +316,33 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     document.addEventListener('click', (e) => { if (!menu.hidden && !e.target.closest('.me-wrap')) close(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menu.hidden) { close(); btn.focus(); } });
     $('#signout').addEventListener('click', async () => { await Auth.signOut(); location.reload(); });
+    setupUpdateButton();
+  }
+
+  /* Only exists inside the Electron shell — window.jioDesktop is undefined
+     on the GitHub Pages build, so the button just stays hidden there. */
+  function setupUpdateButton() {
+    if (!window.jioDesktop?.checkForUpdates) return;
+    const btn = $('#check-update'), label = $('#check-update-label');
+    btn.hidden = false;
+    const render = (status) => {
+      switch (status.state) {
+        case 'checking': label.textContent = 'Checking…'; btn.disabled = true; break;
+        case 'available': label.textContent = `Downloading v${status.detail}…`; btn.disabled = true; break;
+        case 'downloading': label.textContent = `Downloading… ${status.detail}%`; btn.disabled = true; break;
+        case 'downloaded': label.textContent = `Restart to update (v${status.detail})`; btn.disabled = false; btn.dataset.downloaded = '1'; break;
+        case 'not-available': label.textContent = "You're up to date"; btn.disabled = false; setTimeout(reset, 2500); break;
+        case 'error': label.textContent = 'Update check failed'; btn.disabled = false; setTimeout(reset, 2500); break;
+        default: reset();
+      }
+    };
+    const reset = () => { label.textContent = 'Check for updates'; btn.disabled = false; };
+    window.jioDesktop.onUpdateStatus(render);
+    btn.addEventListener('click', () => {
+      if (btn.disabled) return;
+      if (btn.dataset.downloaded) { window.jioDesktop.quitAndInstall?.(); return; }
+      window.jioDesktop.checkForUpdates();
+    });
   }
 
   async function loadChats() {

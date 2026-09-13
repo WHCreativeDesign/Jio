@@ -39,6 +39,28 @@ function setStatus(state, detail = '') {
   if (mainWindow) mainWindow.webContents.send('jio:local-status', llamaStatus);
 }
 
+/* ---------- update check (manual button, and the silent one at launch) ---------- */
+// idle | checking | available | not-available | downloading | downloaded | error
+let updateStatus = { state: 'idle', detail: '' };
+function setUpdateStatus(state, detail = '') {
+  updateStatus = { state, detail };
+  if (mainWindow) mainWindow.webContents.send('jio:update-status', updateStatus);
+}
+autoUpdater.on('checking-for-update', () => setUpdateStatus('checking'));
+autoUpdater.on('update-available', (i) => setUpdateStatus('available', i.version));
+autoUpdater.on('update-not-available', () => setUpdateStatus('not-available'));
+autoUpdater.on('download-progress', (p) => setUpdateStatus('downloading', String(Math.round(p.percent))));
+autoUpdater.on('update-downloaded', (i) => setUpdateStatus('downloaded', i.version));
+autoUpdater.on('error', (e) => setUpdateStatus('error', e.message));
+
+// `notify` true when the user pressed the button (a "you're up to date"
+// toast makes sense); false for the silent launch-time check, which should
+// stay invisible unless there's actually something to do.
+function checkForUpdates(notify) {
+  if (isDev) { setUpdateStatus(notify ? 'not-available' : 'idle'); return; }
+  return autoUpdater.checkForUpdates().catch((e) => setUpdateStatus('error', e.message));
+}
+
 /* ---------- tiny static server for the bundled web app ---------- */
 const MIME = {
   '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
@@ -173,6 +195,9 @@ async function startLocalModel() {
 ipcMain.handle('jio:local-status', () => llamaStatus);
 ipcMain.handle('jio:local-retry', () => startLocalModel());
 ipcMain.handle('jio:open-external', (_e, url) => shell.openExternal(url));
+ipcMain.handle('jio:app-version', () => app.getVersion());
+ipcMain.handle('jio:check-for-updates', () => checkForUpdates(true));
+ipcMain.handle('jio:quit-and-install', () => autoUpdater.quitAndInstall());
 
 /* ---------- app lifecycle ---------- */
 app.whenReady().then(async () => {
@@ -200,9 +225,7 @@ app.whenReady().then(async () => {
   mainWindow.loadURL(`http://127.0.0.1:${STATIC_PORT}/`);
   startLocalModel();
 
-  if (!isDev) {
-    autoUpdater.checkForUpdatesAndNotify().catch(() => {});
-  }
+  if (!isDev) checkForUpdates(false);
 });
 
 app.on('window-all-closed', () => {

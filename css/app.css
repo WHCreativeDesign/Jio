@@ -602,3 +602,16 @@ canvas { display: block; }
   padding-right: calc(10px + var(--caption-controls-w));
 }
 .is-desktop .canvas-head button { -webkit-app-region: no-drag; }
+
+/* ---------- research mode ---------- */
+/* A running transcript of what the browser did, replacing the thinking
+   indicator while jio drives it; the final answer settles in below once
+   done() ends the loop — kept visually distinct from the log above it. */
+.research-log { display: flex; flex-direction: column; gap: 3px; padding: 2px 0; }
+.research-step {
+  font-size: 13px; color: var(--fg-3); line-height: 1.5;
+  animation: msg-in 0.3s var(--ease) both;
+}
+.research-answer { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.research-answer > :first-child { margin-top: 0; }
+.research-answer > :last-child { margin-bottom: 0; }

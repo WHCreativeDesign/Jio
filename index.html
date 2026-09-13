@@ -160,6 +160,9 @@
                 <div class="seg" role="group" aria-label="mode">
                   <button type="button" class="seg-btn on" data-mode="chat">Chat</button>
                   <button type="button" class="seg-btn" data-mode="canvas">Canvas</button>
+                  <!-- desktop-only: needs a real OS-level browser window, so js/chat.js
+                       unhides this when window.jioDesktop exists and hides it otherwise -->
+                  <button type="button" class="seg-btn" data-mode="research" id="research-btn" hidden>Research</button>
                 </div>
               </div>
               <div class="composer-right">

@@ -26,4 +26,19 @@ contextBridge.exposeInMainWorld('jioDesktop', {
     ipcRenderer.on('jio:update-status', handler);
     return () => ipcRenderer.removeListener('jio:update-status', handler);
   },
+  // A real, visible Chromium window jio drives for research mode (js/research.js).
+  // Every call here resolves to the page's current { url, title, elements, text }
+  // reading (see desktop/src/browser.js) unless noted otherwise.
+  browser: {
+    open: () => ipcRenderer.invoke('jio:browser-open'),
+    close: () => ipcRenderer.invoke('jio:browser-close'),
+    navigate: (url) => ipcRenderer.invoke('jio:browser-navigate', url),
+    read: () => ipcRenderer.invoke('jio:browser-read'),
+    screenshot: () => ipcRenderer.invoke('jio:browser-screenshot'), // -> base64 PNG
+    click: (id) => ipcRenderer.invoke('jio:browser-click', id),
+    type: (id, text) => ipcRenderer.invoke('jio:browser-type', id, text),
+    pressEnter: (id) => ipcRenderer.invoke('jio:browser-press-enter', id),
+    scroll: (dir) => ipcRenderer.invoke('jio:browser-scroll', dir),
+    back: () => ipcRenderer.invoke('jio:browser-back'),
+  },
 });

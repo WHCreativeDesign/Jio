@@ -166,7 +166,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
       setProviders(Models.SEED);
       $('#model').addEventListener('change', () => { try { localStorage.setItem('jio.model', $('#model').value); } catch (e) {} });
       refreshModels();
-      setupComposer(); setupSidebar(); setupCanvas(); setupPool();
+      setupComposer(); setupSidebar(); setupCanvas(); setupPool(); setupLocalModel();
     }
     const h = new Date().getHours();
     const when = h < 5 ? 'up late' : h < 12 ? 'good morning' : h < 18 ? 'good afternoon' : 'good evening';
@@ -198,6 +198,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
       if (best) o.title = Models.label(best);
       sel.appendChild(o);
     });
+    refreshLocalOption(); // desktop-only; index.html on the web never sets window.jioDesktop
     // a remembered choice whose provider has since dropped out must not stick
     sel.value = [...sel.options].some(o => o.value === want) ? want : 'auto';
     try { localStorage.setItem('jio.model', sel.value); } catch (e) {}
@@ -208,9 +209,45 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
       if (list.length) setProviders(list);
     } catch (e) { /* seed stands */ }
   }
-  /* Summarising history shouldn't cost as much as the conversation itself:
-     gemini and cohere's best are the cheap fast ones of this bunch. */
+
+  /* ---------- desktop's bundled local model ----------
+     window.jioDesktop only exists inside the Electron shell (see
+     desktop/src/preload.js) — the exact same index.html on GitHub Pages never
+     sees it, so this is a no-op there. */
+  let lastLocalStatus = null;
+  function localOptionLabel(status) {
+    if (!status) return 'Local';
+    if (status.state === 'ready') return 'Local';
+    if (status.state === 'starting') return 'Local (starting…)';
+    if (status.state === 'error') return 'Local (unavailable)';
+    if (status.state === 'downloading') {
+      try {
+        const { received, total } = JSON.parse(status.detail || '{}');
+        if (total) return `Local (downloading ${Math.round(received / total * 100)}%)`;
+      } catch (e) {}
+      return 'Local (downloading…)';
+    }
+    return 'Local';
+  }
+  function refreshLocalOption() {
+    if (!window.jioDesktop) return;
+    const sel = $('#model');
+    let o = sel.querySelector('option[value="local"]');
+    if (!o) { o = document.createElement('option'); o.value = 'local'; sel.appendChild(o); }
+    o.textContent = localOptionLabel(lastLocalStatus);
+    o.disabled = !lastLocalStatus || lastLocalStatus.state !== 'ready';
+  }
+  function setupLocalModel() {
+    if (!window.jioDesktop) return;
+    window.jioDesktop.status().then((s) => { lastLocalStatus = s; refreshLocalOption(); });
+    window.jioDesktop.onStatus((s) => { lastLocalStatus = s; refreshLocalOption(); });
+  }
+
+  /* Summarising history shouldn't cost as much as the conversation itself.
+     The local model, once it's actually ready, is free and instant for this —
+     prefer it. Otherwise gemini and cohere are the cheap fast ones of this bunch. */
   function cheapModel() {
+    if (lastLocalStatus?.state === 'ready') return 'local';
     const have = [...$('#model').options].map(o => o.value);
     return ['gemini', 'cohere', 'groq'].find(p => have.includes(p)) || 'auto';
   }
@@ -363,6 +400,25 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
   function stopThinking(bubble) {
     if (bubble._thinkTimer) { clearInterval(bubble._thinkTimer); bubble._thinkTimer = null; }
   }
+  /* Local-only: a genuine one-line plan from the model itself, streamed live
+     into the same shimmering status header the canned phrases use. Purely
+     decorative — if it fails or the model rambles past the length asked for,
+     the real answer right after is unaffected either way. */
+  async function localThinkingPreview(bubble, messages, signal) {
+    stopThinking(bubble);
+    bubble.innerHTML = '<div class="thinking"><span class="thinking-text enter"></span></div>';
+    const el = bubble.querySelector('.thinking-text');
+    try {
+      await Data.stream({
+        model: 'local', signal, temperature: 0.4,
+        messages: [
+          { role: 'system', content: 'State your plan for replying to the user\'s last message in under 10 words. Plan only — do not answer yet, do not use punctuation beyond a single period.' },
+          ...messages.slice(-6),
+        ],
+        onToken: (_, sofar) => { el.textContent = stripMood(sofar).replace(PARTIAL, ''); },
+      });
+    } catch (e) { /* decorative — the real request follows regardless */ }
+  }
 
   /* Streaming a chunk: append it as plain text (no markdown parse per token —
      that happens once, at the end) so each new piece can blur in on its own,
@@ -506,6 +562,12 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     $('#send').classList.add('stop');
     let full = '', lastCanvas = 0, mood = null, route = '';
     try {
+      // The local model is fast and free to call twice — a real one-line plan,
+      // streamed live into the thinking indicator, reads as it actually
+      // thinking rather than cycling canned phrases while it works.
+      if ($('#model').value === 'local' && !editMode) {
+        await localThinkingPreview(bubble, messages, abort.signal);
+      }
       full = await Data.stream({
         model: $('#model').value, messages, signal: abort.signal,
         temperature: editMode ? 0.2 : 0.7,

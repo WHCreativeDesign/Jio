@@ -26,6 +26,9 @@
       name: 'Cohere', hint: '40 characters', test: /^[A-Za-z0-9]{32,}$/,
       keys: 'https://dashboard.cohere.com/api-keys',
     },
+    // not a donated-key pool: a bundled llama.cpp server running on the
+    // user's own machine, only ever present inside the desktop app
+    local: { name: 'Local', local: true },
   };
   const ORDER = ['groq', 'nvidia', 'gemini', 'cohere'];
 
@@ -38,6 +41,7 @@
     'qwen/qwen3.6-27b': 'Qwen3.6 27B',
     'openai/gpt-oss-20b': 'GPT-OSS 20B',
     'openai/gpt-oss-120b': 'GPT-OSS 120B',
+    'qwen2.5-3b-instruct': 'Qwen2.5 3B',
   };
 
   const providerOf = (id) => {

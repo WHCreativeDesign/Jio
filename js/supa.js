@@ -152,24 +152,9 @@
       return providers || [];
     },
 
-    /* ---------- chat completion, proxied through the edge function ---------- */
-    async stream({ model, messages, signal, onToken, onRoute, temperature }) {
-      const { data: { session } } = await db.auth.getSession();
-      if (!session) throw new Error('session expired — sign in again');
-
-      const res = await fetch(`${URL}/functions/v1/chat`, {
-        method: 'POST', signal,
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}`, apikey: PUBLISHABLE_KEY },
-        body: JSON.stringify({ model, messages, temperature }),
-      });
-      if (!res.ok) {
-        let msg = `${res.status}`, code = '';
-        try { const j = await res.json(); msg = j.error || msg; code = j.code || ''; } catch (e) {}
-        const err = new Error(msg); err.status = res.status; err.code = code; throw err;
-      }
-      // which provider/model the pool actually picked — auto can land anywhere
-      if (onRoute) { const r = res.headers.get('X-Jio-Route'); if (r) onRoute(r); }
-
+    /* Both the cloud proxy and the desktop app's bundled llama.cpp server speak
+       the same OpenAI-compatible SSE shape, so one reader loop serves both. */
+    async _readSSE(res, onToken) {
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = '', text = '';
@@ -189,6 +174,44 @@
         }
       }
       return text;
+    },
+
+    /* ---------- chat completion ----------
+       "local" bypasses Supabase entirely and talks straight to the desktop
+       app's bundled llama.cpp server on localhost — nothing to authenticate,
+       nothing leaves the machine. Everything else still goes through the
+       edge function's donated-key pool. */
+    async stream({ model, messages, signal, onToken, onRoute, temperature }) {
+      if (model === 'local') {
+        if (!global.jioDesktop) throw new Error('local model is only available in the jio desktop app');
+        const res = await fetch(`${global.jioDesktop.localBaseUrl}/v1/chat/completions`, {
+          method: 'POST', signal,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages, stream: true, temperature: temperature ?? 0.7 }),
+        });
+        if (!res.ok) {
+          const err = new Error(`local model error (${res.status})`); err.status = res.status; throw err;
+        }
+        if (onRoute) onRoute('local/qwen2.5-3b-instruct');
+        return this._readSSE(res, onToken);
+      }
+
+      const { data: { session } } = await db.auth.getSession();
+      if (!session) throw new Error('session expired — sign in again');
+
+      const res = await fetch(`${URL}/functions/v1/chat`, {
+        method: 'POST', signal,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}`, apikey: PUBLISHABLE_KEY },
+        body: JSON.stringify({ model, messages, temperature }),
+      });
+      if (!res.ok) {
+        let msg = `${res.status}`, code = '';
+        try { const j = await res.json(); msg = j.error || msg; code = j.code || ''; } catch (e) {}
+        const err = new Error(msg); err.status = res.status; err.code = code; throw err;
+      }
+      // which provider/model the pool actually picked — auto can land anywhere
+      if (onRoute) { const r = res.headers.get('X-Jio-Route'); if (r) onRoute(r); }
+      return this._readSSE(res, onToken);
     },
   };
 

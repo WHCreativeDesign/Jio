@@ -1,0 +1,58 @@
+name: Release desktop app
+
+# Builds the Windows installer and publishes it to this repo's GitHub Releases,
+# which is also where electron-updater looks for updates — pushing a tag here
+# is the entire "ship a new version" step.
+on:
+  push:
+    tags: ["desktop-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # llama.cpp's Windows CUDA release asset names shift between versions
+      # (cuda toolkit version in the filename, backend split in/out of the
+      # main zip), so this matches by pattern against the latest release
+      # instead of a pinned filename that will eventually go stale.
+      - name: Fetch llama.cpp (Windows, CUDA)
+        shell: pwsh
+        run: |
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest" -Headers @{ "User-Agent" = "jio-build" }
+          $assets = $release.assets | Where-Object { $_.name -match "win-cuda.*x64\.zip$" -or $_.name -match "^cudart-.*x64\.zip$" }
+          if (-not $assets) { throw "no matching llama.cpp Windows CUDA assets found on the latest release — check https://github.com/ggml-org/llama.cpp/releases and adjust the pattern above" }
+          New-Item -ItemType Directory -Force -Path resources/llama | Out-Null
+          foreach ($asset in $assets) {
+            Write-Host "downloading $($asset.name)"
+            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "$($asset.name)"
+            Expand-Archive -Path "$($asset.name)" -DestinationPath resources/llama -Force
+          }
+          Get-ChildItem resources/llama -Recurse | Select-Object -First 30
+
+      - name: Confirm llama-server.exe landed
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "resources/llama/llama-server.exe")) {
+            Get-ChildItem resources/llama -Recurse
+            throw "llama-server.exe not found after extraction — the zip layout probably changed; adjust the extraction step above to match"
+          }
+
+      - run: npm ci
+
+      - name: Build and publish
+        run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

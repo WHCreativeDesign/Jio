@@ -1,0 +1,45 @@
+{
+  "name": "jio-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "jio, packaged as a Windows desktop app with an offline local model.",
+  "main": "src/main.js",
+  "scripts": {
+    "copy-web": "node scripts/copy-web.js",
+    "start": "npm run copy-web && electron .",
+    "dist": "npm run copy-web && electron-builder --publish never",
+    "release": "npm run copy-web && electron-builder --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "org.usecloak.jio",
+    "productName": "jio",
+    "artifactName": "${productName}-Setup-${version}.${ext}",
+    "asar": true,
+    "files": [
+      "src/**/*",
+      "web/**/*",
+      "!web/**/.git*"
+    ],
+    "extraResources": [
+      { "from": "resources/llama", "to": "llama", "filter": ["**/*"] }
+    ],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "publish": [
+      { "provider": "github", "owner": "WHCreativeDesign", "repo": "Jio" }
+    ]
+  }
+}

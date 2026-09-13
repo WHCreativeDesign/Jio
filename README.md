@@ -9,6 +9,12 @@ Static front end on GitHub Pages, Supabase for accounts, storage, and the model 
 - `index.html` — sign in → chat, canvas mode, key pool
 - `lab.html` — eye lab: every expression the `JioEyes` engine can make, public, no login
 
+## Desktop
+
+`desktop/` wraps this same web app in Electron for a Windows build that
+auto-updates from GitHub Releases and runs an offline local model (bundled
+llama.cpp) alongside the cloud providers. See `desktop/README.md`.
+
 ## How it works
 
 **Accounts.** Email + password, no 2FA, no PIN in front of it. A trigger mirrors each new

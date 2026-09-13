@@ -22,6 +22,7 @@ const LLAMA_DIR = isDev
 const MODELS_DIR = path.join(app.getPath('userData'), 'models');
 const LLAMA_PORT = 8790;
 const STATIC_PORT = 8791;
+const CAPTION_H = 36;
 
 // Bartowski's GGUF quantizations are the de facto standard, one file per
 // quant level. Swap this (and MODEL_FILE) to move to a different model or
@@ -178,8 +179,17 @@ app.whenReady().then(async () => {
   await startStaticServer();
   mainWindow = new BrowserWindow({
     width: 1280, height: 860, minWidth: 760, minHeight: 560,
-    backgroundColor: '#1c1c1e',
+    // matches --bg-side, so the very first paint (before the page loads) is
+    // already jio-colored rather than a white flash
+    backgroundColor: '#1f1e1d',
     autoHideMenuBar: true,
+    // Windows draws its native caption bar in the *system* theme, which for
+    // most people is light — a white strip above a dark app. Hiding it and
+    // painting our own overlay in jio's sidebar color keeps the window one
+    // piece. The native minimise/maximise/close buttons still render, just
+    // tinted; CAPTION_H below is what the page reserves for them.
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#1f1e1d', symbolColor: '#c2c0b6', height: CAPTION_H },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

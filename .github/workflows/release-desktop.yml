@@ -32,8 +32,20 @@ jobs:
         shell: pwsh
         run: |
           $release = Invoke-RestMethod -Uri "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest" -Headers @{ "User-Agent" = "jio-build" }
+          Write-Host "latest llama.cpp release: $($release.tag_name)"
+          Write-Host "all asset names on this release:"
+          $release.assets | ForEach-Object { Write-Host "  $($_.name)" }
+
           $assets = $release.assets | Where-Object { $_.name -match "win-cuda.*x64\.zip$" -or $_.name -match "^cudart-.*x64\.zip$" }
-          if (-not $assets) { throw "no matching llama.cpp Windows CUDA assets found on the latest release — check https://github.com/ggml-org/llama.cpp/releases and adjust the pattern above" }
+          if (-not $assets) {
+            $assets = $release.assets | Where-Object { $_.name -match "(?i)win.*cuda.*\.zip$" -or $_.name -match "(?i)cuda.*win.*\.zip$" }
+          }
+          if (-not $assets) {
+            throw "no matching llama.cpp Windows CUDA assets found on $($release.tag_name) — see the full asset list printed above and adjust the -match patterns in this step to fit"
+          }
+          Write-Host "matched:"
+          $assets | ForEach-Object { Write-Host "  $($_.name)" }
+
           New-Item -ItemType Directory -Force -Path resources/llama | Out-Null
           foreach ($asset in $assets) {
             Write-Host "downloading $($asset.name)"

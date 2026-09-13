@@ -310,7 +310,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
   }
 
   /* ---------- account menu ---------- */
-  const VERSION = '0.4.0';
+  const VERSION = '0.4.1';
   function setupMeMenu() {
     const btn = $('#me'), menu = $('#me-menu');
     $('#me-version').textContent = `jio v${VERSION}`;
@@ -721,6 +721,11 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
      text reading every model gets — "text based navigation" is the universal
      path, a screenshot is the bonus a vision-capable model gets on top. */
   const RESEARCH_STEPS = 14;
+  // duckduckgo's html-only endpoint, not google: no consent interstitial, no
+  // heavy client-side rendering to fight through on a fresh cookie-less
+  // session (exactly what this embedded view always is) — a search a text
+  // extraction can actually read cleanly on the first try.
+  const SEARCH_URL = 'https://duckduckgo.com/html/?q=';
   const RESEARCH_SYSTEM = `You are jio, driving a real web browser to research the user's request. You can see either a numbered list of the page's clickable/typeable elements and its visible text, or — when noted — a screenshot alongside that same numbering.
 
 After a short line or two of reasoning, end your reply with EXACTLY one line in this exact form and nothing else on it:
@@ -729,7 +734,7 @@ ACTION: name(args)
 Do NOT use JSON, XML, markdown code fences, or any tool-call/function-call syntax — a single plain ACTION: line, always the last line of your reply.
 
 Available actions:
-  navigate("https://...")   go straight to a URL — including a search engine's results URL, e.g. https://www.google.com/search?q=your+query
+  navigate("https://...")   go straight to a URL. If the task names a specific site, go there directly — do not search for it. Only search when you genuinely don't know where the answer lives, using ${SEARCH_URL}your+query
   click(N)                  click the numbered element from the observation you were just shown
   type(N, "text")           type into numbered input/textarea N (does not submit)
   enter(N)                  press Enter in numbered field N (submits most search/forms)
@@ -740,7 +745,8 @@ Available actions:
 Rules:
 - Exactly one ACTION per turn.
 - Numbers refer only to the most recent observation — if the page changed, re-read before clicking.
-- Prefer navigate() straight to a search results URL over guessing a specific address.
+- If the task names or clearly implies a specific site (a URL, a company, "on GitHub", "on Wikipedia"...), navigate() straight there. Search only as a last resort for something you cannot otherwise locate.
+- NEVER search for the same or a rephrased query twice in a row. After a search's results come back, your very next action must be click(N) into one of them — not another navigate() search. If the results are genuinely useless, try ONE different query, then commit to clicking something.
 - Call done(...) the moment you can answer. If you're running out of turns, call done() with your best answer and say plainly what you could not confirm.`;
 
   function parseAction(text) {
@@ -788,8 +794,12 @@ Rules:
 
     let full = 'research stopped before reaching an answer.';
     let route = '';
+    let searchStreak = 0;
     try {
-      const first = await window.jioDesktop.browser.navigate('https://www.google.com');
+      // duckduckgo's html endpoint again, not google — same consent-wall/heavy-JS
+      // reason as SEARCH_URL above, and it means the very first thing the model
+      // sees is already the kind of page it'll be reading all session
+      const first = await window.jioDesktop.browser.navigate('https://duckduckgo.com/html/');
       const urlEl = $('#research-url'); if (urlEl) urlEl.textContent = first.url;
       const messages = [
         { role: 'system', content: RESEARCH_SYSTEM },
@@ -807,6 +817,15 @@ Rules:
 
         if (action.name === 'done') { full = action.args[0] || stripMood(reply); logStep(logEl, '✅ done'); break; }
 
+        // A hard guard against the exact loop this mode used to fall into:
+        // the model re-searching over and over instead of ever clicking a
+        // result. Prompt rules alone don't reliably stop a model from doing
+        // this, so back them with a code-level nudge that gets louder the
+        // longer it keeps happening, independent of whether the model reads
+        // (or follows) the system prompt's own rule against it.
+        const isSearch = action.name === 'navigate' && /[?&]q=/.test(action.args[0] || '');
+        searchStreak = isSearch ? searchStreak + 1 : 0;
+
         let obs, desc;
         try {
           switch (action.name) {
@@ -823,9 +842,12 @@ Rules:
         if (urlEl && obs) urlEl.textContent = obs.url;
 
         messages.push({ role: 'assistant', content: reply });
-        const obsText = obs
+        let obsText = obs
           ? `OBSERVATION — ${obs.url} — "${obs.title}":\n${obs.elements.join('\n') || '(no interactive elements found)'}\n\nPage text:\n${obs.text}`
           : 'OBSERVATION: that action failed and the page could not be re-read.';
+        if (searchStreak >= 2) {
+          obsText = `IMPORTANT: that's ${searchStreak} searches in a row with no click in between. Do not search again — click(N) on one of the results below, or call done() if you already have enough.\n\n${obsText}`;
+        }
         if (vision) {
           const shot = await window.jioDesktop.browser.screenshot().catch(() => null);
           messages.push({ role: 'user', content: shot

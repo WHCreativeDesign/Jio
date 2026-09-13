@@ -18,4 +18,12 @@ contextBridge.exposeInMainWorld('jioDesktop', {
     return () => ipcRenderer.removeListener('jio:local-status', handler);
   },
   openExternal: (url) => ipcRenderer.invoke('jio:open-external', url),
+  appVersion: () => ipcRenderer.invoke('jio:app-version'),
+  checkForUpdates: () => ipcRenderer.invoke('jio:check-for-updates'),
+  quitAndInstall: () => ipcRenderer.invoke('jio:quit-and-install'),
+  onUpdateStatus: (cb) => {
+    const handler = (_e, status) => cb(status);
+    ipcRenderer.on('jio:update-status', handler);
+    return () => ipcRenderer.removeListener('jio:update-status', handler);
+  },
 });

@@ -294,7 +294,12 @@ canvas { display: block; }
 /* "Thinking" status: a text header, not dots — cycles through a few phrases,
    each one blurring down into place, painted with a gradient sweeping
    left-to-right (a glow moving through the text, not a swipe over a bar). */
-.thinking { display: flex; align-items: center; min-height: 24px; padding: 4px 0; }
+.thinking {
+  display: flex; align-items: center; height: 24px;
+  /* exactly matches .msg.assistant .who's box (also 24px, border-box) so the
+     eyes-only mascot parked over .who lands on this line's vertical center
+     too, not just the first real text line's. */
+}
 .thinking-text {
   font: 500 14.5px/1.3 var(--sans); letter-spacing: -0.005em;
   background-image: linear-gradient(

@@ -31,7 +31,11 @@ contextBridge.exposeInMainWorld('jioDesktop', {
   // reading (see desktop/src/browser.js) unless noted otherwise.
   browser: {
     open: () => ipcRenderer.invoke('jio:browser-open'),
-    close: () => ipcRenderer.invoke('jio:browser-close'),
+    hide: () => ipcRenderer.invoke('jio:browser-hide'),
+    // rect: a DOMRect-shaped {x,y,width,height} from the panel placeholder's
+    // own getBoundingClientRect() — same coordinate space as the window's
+    // content area, so it can go straight to WebContentsView.setBounds()
+    setBounds: (rect) => ipcRenderer.invoke('jio:browser-set-bounds', rect),
     navigate: (url) => ipcRenderer.invoke('jio:browser-navigate', url),
     read: () => ipcRenderer.invoke('jio:browser-read'),
     screenshot: () => ipcRenderer.invoke('jio:browser-screenshot'), // -> base64 PNG

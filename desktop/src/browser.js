@@ -1,9 +1,13 @@
-// The research browser: a real, visible Chromium window jio can drive, so
-// research mode is watching an actual browser navigate rather than jio
-// hallucinating page content. One instance, opened on demand.
+// The research browser: a real Chromium view embedded directly in jio's own
+// window (a WebContentsView layered over the renderer — the modern,
+// non-deprecated replacement for the old BrowserView), rather than a separate
+// popup window. js/chat.js reports where its research panel sits on screen
+// (via ResizeObserver, see setupResearchPanel in js/chat.js) and this module
+// keeps the real view's bounds glued to it, so it reads as part of the app
+// rather than something floating beside it.
 //
-// Two ways out a page's state comes back to the model, matched to what it can
-// actually read (see js/research.js for which is used when):
+// Two ways a page's state comes back to the model (js/research.js), matched
+// to what it can actually read:
 //   - readPage(): a numbered list of visible interactive elements (links,
 //     buttons, inputs) plus a clipped text extract — a plain-text "screen
 //     reader" view any text model can act on, the same idea as the
@@ -13,9 +17,10 @@
 // Both read the SAME numbering: readPage() stamps each element with a
 // data-jio-id used by click()/type() below, so a vision model can point at
 // what it sees on the screenshot by the number the text view also gives it.
-const { BrowserWindow } = require('electron');
+const { WebContentsView } = require('electron');
 
-let win = null;
+let view = null;
+let host = null; // the BrowserWindow it's currently attached to
 
 const MARK_AND_READ = `(() => {
   const isVisible = (el) => {
@@ -40,61 +45,72 @@ const MARK_AND_READ = `(() => {
 })()`;
 
 function ensure() {
-  if (win && !win.isDestroyed()) return win;
-  win = new BrowserWindow({
-    width: 1000, height: 800,
-    title: 'jio — research browser',
-    webPreferences: { sandbox: true, contextIsolation: true },
-  });
-  win.on('closed', () => { win = null; });
-  return win;
+  if (!view) {
+    view = new WebContentsView({ webPreferences: { sandbox: true, contextIsolation: true } });
+    view.setVisible(false); // hidden until attach() gives it somewhere to sit
+  }
+  return view;
 }
 
-function waitLoaded(w) {
+function waitLoaded(wc) {
   return new Promise((resolve, reject) => {
     const done = () => { cleanup(); resolve(); };
     const fail = (_e, code, desc) => { cleanup(); reject(new Error(desc || `failed to load (${code})`)); };
-    const cleanup = () => {
-      w.webContents.removeListener('did-finish-load', done);
-      w.webContents.removeListener('did-fail-load', fail);
-    };
-    w.webContents.once('did-finish-load', done);
-    w.webContents.once('did-fail-load', fail);
+    const cleanup = () => { wc.removeListener('did-finish-load', done); wc.removeListener('did-fail-load', fail); };
+    wc.once('did-finish-load', done);
+    wc.once('did-fail-load', fail);
   });
 }
 
 const Browser = {
-  isOpen: () => !!win && !win.isDestroyed(),
-  focus() { if (Browser.isOpen()) win.focus(); },
-  close() { if (Browser.isOpen()) win.close(); },
+  isOpen: () => !!view,
 
-  async open() { ensure(); if (!win.webContents.getURL()) await Browser.navigate('https://www.google.com'); return true; },
+  /** Embed the view in `win`'s own content area — called once the research
+      panel first opens. Idempotent: re-attaching to the same window is a
+      no-op, since the panel toggling on/off just calls setVisible below. */
+  attach(win) {
+    ensure();
+    if (host !== win) {
+      if (host) host.contentView.removeChildView(view);
+      win.contentView.addChildView(view);
+      host = win;
+    }
+    view.setVisible(true);
+  },
+  hide() { if (view) view.setVisible(false); },
+  detach() { if (view && host) { host.contentView.removeChildView(view); host = null; } },
+
+  /** x/y/width/height in the host window's content coordinates — exactly what
+      a renderer-side getBoundingClientRect() on the panel placeholder gives. */
+  setBounds(rect) { if (view) view.setBounds({ x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }); },
+
+  async open() { ensure(); if (!view.webContents.getURL()) await Browser.navigate('https://www.google.com'); return true; },
 
   async navigate(url) {
-    const w = ensure();
+    const wc = ensure().webContents;
     if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
-    const p = waitLoaded(w);
-    w.loadURL(url);
+    const p = waitLoaded(wc);
+    wc.loadURL(url);
     await p;
     return Browser.read();
   },
 
   async read() {
-    const w = ensure();
-    const raw = await w.webContents.executeJavaScript(MARK_AND_READ, true).catch((e) => null);
-    if (!raw) return { url: w.webContents.getURL(), title: w.webContents.getTitle(), elements: [], text: '(page did not respond to reading — it may still be loading, or blocks scripted access)' };
+    const wc = ensure().webContents;
+    const raw = await wc.executeJavaScript(MARK_AND_READ, true).catch(() => null);
+    if (!raw) return { url: wc.getURL(), title: wc.getTitle(), elements: [], text: '(page did not respond to reading — it may still be loading, or blocks scripted access)' };
     return JSON.parse(raw);
   },
 
   async screenshot() {
-    const w = ensure();
-    const img = await w.capturePage();
+    const v = ensure();
+    const img = await v.webContents.capturePage();
     return img.resize({ width: 1000 }).toPNG().toString('base64');
   },
 
   async click(id) {
-    const w = ensure();
-    const ok = await w.webContents.executeJavaScript(
+    const wc = ensure().webContents;
+    const ok = await wc.executeJavaScript(
       `(() => { const el = document.querySelector('[data-jio-id="${id}"]'); if (!el) return false;
         el.scrollIntoView({ block: 'center' }); el.click(); return true; })()`, true,
     ).catch(() => false);
@@ -105,8 +121,8 @@ const Browser = {
   },
 
   async type(id, text) {
-    const w = ensure();
-    const ok = await w.webContents.executeJavaScript(
+    const wc = ensure().webContents;
+    const ok = await wc.executeJavaScript(
       `(() => { const el = document.querySelector('[data-jio-id="${id}"]'); if (!el) return false;
         el.scrollIntoView({ block: 'center' }); el.focus();
         const setter = Object.getOwnPropertyDescriptor(el.__proto__, 'value')?.set;
@@ -120,28 +136,26 @@ const Browser = {
   },
 
   async pressEnter(id) {
-    const w = ensure();
-    await w.webContents.executeJavaScript(
-      `document.querySelector('[data-jio-id="${id}"]')?.focus()`, true,
-    ).catch(() => {});
-    w.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' });
-    w.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' });
+    const wc = ensure().webContents;
+    await wc.executeJavaScript(`document.querySelector('[data-jio-id="${id}"]')?.focus()`, true).catch(() => {});
+    wc.sendInputEvent({ type: 'keyDown', keyCode: 'Return' });
+    wc.sendInputEvent({ type: 'keyUp', keyCode: 'Return' });
     await new Promise((r) => setTimeout(r, 500));
     return Browser.read();
   },
 
   async scroll(dir) {
-    const w = ensure();
+    const wc = ensure().webContents;
     const dy = dir === 'up' ? -700 : 700;
-    await w.webContents.executeJavaScript(`window.scrollBy(0, ${dy})`, true).catch(() => {});
+    await wc.executeJavaScript(`window.scrollBy(0, ${dy})`, true).catch(() => {});
     return Browser.read();
   },
 
   async back() {
-    const w = ensure();
-    if (!w.webContents.navigationHistory.canGoBack()) return Browser.read();
-    const p = waitLoaded(w);
-    w.webContents.navigationHistory.goBack();
+    const wc = ensure().webContents;
+    if (!wc.navigationHistory.canGoBack()) return Browser.read();
+    const p = waitLoaded(wc);
+    wc.navigationHistory.goBack();
     await p.catch(() => {});
     return Browser.read();
   },

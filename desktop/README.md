@@ -74,9 +74,19 @@ Every step, the browser is read back two ways:
   gets a screenshot alongside that same numbering — a bonus on top of text
   nav, not a replacement for it.
 
-Desktop-only: it needs an OS-level browser window electron opens, so the
+Desktop-only: it needs an OS-level browser view electron opens, so the
 Research button stays hidden on the GitHub Pages build (`window.jioDesktop`
 doesn't exist there).
+
+The browser itself is embedded in jio's own window, not a separate popup —
+a `WebContentsView` (`desktop/src/browser.js`) the main process layers
+directly over a placeholder panel in the app (`#research-view`), narrower
+than the canvas panel (research is a live page to glance at, not a document
+meant to fill the space). `setResearchOpen()` in `js/chat.js` keeps a
+`ResizeObserver` on that placeholder so the view's on-screen bounds track it
+through resizes and the open/close slide animation, and hides (not
+destroys) the view when the panel closes, so the same page picks back up
+next time research mode opens.
 
 ## Running it
 

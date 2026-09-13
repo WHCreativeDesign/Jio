@@ -241,6 +241,22 @@
         <div class="canvas-empty" id="canvas-empty">ask jio to build something — it lands here.</div>
       </div>
     </aside>
+
+    <!-- Desktop-only: the actual page here is a native WebContentsView the
+         main process layers directly over #research-view (see
+         desktop/src/browser.js) — this markup is just the frame around it.
+         #research-view stays visually empty; it exists to be measured, not
+         to show anything itself. Never rendered on the GitHub Pages build. -->
+    <aside class="research-panel" id="research-panel">
+      <div class="research-head">
+        <span class="research-title">Research</span>
+        <span class="research-url" id="research-url"></span>
+        <button class="icon-btn" id="research-close" title="close">
+          <svg viewBox="0 0 20 20" width="16" height="16"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div class="research-view" id="research-view"></div>
+    </aside>
   </div>
 
   <script defer src="js/vendor/marked.min.js"></script>

@@ -310,7 +310,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
   }
 
   /* ---------- account menu ---------- */
-  const VERSION = '0.3.0';
+  const VERSION = '0.4.0';
   function setupMeMenu() {
     const btn = $('#me'), menu = $('#me-menu');
     $('#me-version').textContent = `jio v${VERSION}`;
@@ -557,9 +557,43 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
       researchMode = b.dataset.mode === 'research';
       document.querySelectorAll('.seg-btn').forEach(x => x.classList.toggle('on', x === b));
       app.classList.toggle('canvas-open', canvasMode);
+      setResearchOpen(researchMode);
       mascot.react(canvasMode ? 'excited' : researchMode ? 'curious' : 'neutral', 1000);
-      if (researchMode) window.jioDesktop?.browser.open().catch(() => {});
     }));
+    $('#research-close')?.addEventListener('click', () => {
+      researchMode = false;
+      document.querySelectorAll('.seg-btn').forEach(x => x.classList.toggle('on', x.dataset.mode === 'chat'));
+      setResearchOpen(false);
+    });
+  }
+
+  /* The embedded browser (desktop/src/browser.js) is a native WebContentsView
+     layered directly over #research-view, not part of the DOM — so opening
+     the panel means both flipping the CSS class AND telling the main process
+     to attach/show that view, and closing means hiding it (not destroying it;
+     the same live page is still there next time research mode opens). A
+     ResizeObserver keeps its on-screen bounds glued to the placeholder for as
+     long as the panel is open, including every frame of the slide-open/close
+     transition — the observed box's size genuinely changes each frame during
+     that transition, so this fires continuously through it for free. */
+  let researchRO = null;
+  function setResearchOpen(open) {
+    app.classList.toggle('research-open', open);
+    if (!window.jioDesktop?.browser) return;
+    if (open) {
+      window.jioDesktop.browser.open().catch(() => {});
+      const target = $('#research-view');
+      const report = () => {
+        const r = target.getBoundingClientRect();
+        window.jioDesktop.browser.setBounds(r);
+      };
+      report();
+      researchRO = new ResizeObserver(report);
+      researchRO.observe(target);
+    } else {
+      researchRO?.disconnect(); researchRO = null;
+      window.jioDesktop.browser.hide();
+    }
   }
 
   async function ask(text) {
@@ -756,6 +790,7 @@ Rules:
     let route = '';
     try {
       const first = await window.jioDesktop.browser.navigate('https://www.google.com');
+      const urlEl = $('#research-url'); if (urlEl) urlEl.textContent = first.url;
       const messages = [
         { role: 'system', content: RESEARCH_SYSTEM },
         { role: 'user', content: `Research task: ${text}\n\nCurrent page (${first.url} — "${first.title}"):\n${first.elements.join('\n') || '(no interactive elements found)'}\n\nPage text:\n${first.text}` },
@@ -785,6 +820,7 @@ Rules:
           }
         } catch (e) { obs = await window.jioDesktop.browser.read().catch(() => null); desc = `⚠ ${action.name} failed: ${e.message}`; }
         logStep(logEl, desc || action.name);
+        if (urlEl && obs) urlEl.textContent = obs.url;
 
         messages.push({ role: 'assistant', content: reply });
         const obsText = obs

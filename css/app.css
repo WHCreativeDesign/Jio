@@ -106,6 +106,12 @@ canvas { display: block; }
 .app.collapsed { grid-template-columns: 0px 1fr minmax(0px, 0%); }
 .app.canvas-open { grid-template-columns: 280px 1fr minmax(380px, 46%); }
 .app.collapsed.canvas-open { grid-template-columns: 0px 1fr minmax(380px, 50%); }
+/* Research shares the same third track as canvas (they're mutually exclusive —
+   see .canvas-panel/.research-panel both pinned to grid-column: 3 below) but
+   noticeably narrower: it's a live embedded browser view, not a document meant
+   to fill the space, so "visible but not the size of canvas" is the brief. */
+.app.research-open { grid-template-columns: 280px 1fr minmax(320px, 34%); }
+.app.collapsed.research-open { grid-template-columns: 0px 1fr minmax(320px, 38%); }
 
 /* ---------- sidebar ---------- */
 .sidebar {
@@ -418,6 +424,11 @@ canvas { display: block; }
 .status { display: inline-flex; align-items: center; gap: 6px; }
 
 /* ---------- canvas panel ---------- */
+/* Canvas and research share the app frame's third grid track (they're
+   mutually exclusive — only one mode is ever active) rather than each
+   getting their own, so both are pinned there explicitly regardless of
+   which is actually present in the DOM at a given moment. */
+.canvas-panel, .research-panel { grid-column: 3; grid-row: 1; }
 .canvas-panel {
   border-left: 1px solid var(--line); background: var(--bg-side);
   display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden;
@@ -431,12 +442,33 @@ canvas { display: block; }
 .app.canvas-open .canvas-panel { visibility: visible; transition-delay: 0s; }
 /* the 1px border would otherwise sit visible against a 0-width track */
 .app:not(.canvas-open) .canvas-panel { border-left-color: transparent; }
-.canvas-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px 8px 12px; border-bottom: 1px solid var(--line); }
+.canvas-head, .research-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px 8px 12px; border-bottom: 1px solid var(--line); }
 .tabs { display: flex; gap: 2px; }
 .tab { padding: 5px 12px; border-radius: 999px; font-size: 13.5px; color: var(--fg-3); transition: background-color 0.16s var(--ease), color 0.16s var(--ease); }
 .tab:hover { color: var(--fg-2); }
 .tab.on { background: var(--bg-active); color: var(--fg); }
 .canvas-actions { display: flex; gap: 2px; }
+
+/* ---------- research panel ---------- */
+/* The panel itself is just a frame — the live page is a WebContentsView the
+   main process layers directly over #research-view (see desktop/src/browser.js
+   and setupResearchPanel in js/chat.js, which keeps its bounds glued to that
+   placeholder). #research-view stays visually empty on purpose; it only
+   exists to be measured. */
+.research-panel {
+  border-left: 1px solid var(--line); background: var(--bg-side);
+  display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden;
+  visibility: hidden;
+  transition: visibility 0s linear var(--panel-slide), border-left-color var(--panel-slide) var(--ease);
+}
+.app.research-open .research-panel { visibility: visible; transition-delay: 0s; }
+.app:not(.research-open) .research-panel { border-left-color: transparent; }
+.research-title { font-size: 13.5px; font-weight: 500; color: var(--fg-2); flex: none; }
+.research-view { flex: 1; min-height: 0; }
+.research-url {
+  flex: 1; min-width: 0; font-size: 12.5px; color: var(--fg-3); font-family: var(--mono);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 8px;
+}
 .canvas-body { flex: 1; position: relative; min-height: 0; background: var(--bg-elev); }
 .canvas-body iframe { width: 100%; height: 100%; border: 0; background: #fff; }
 .canvas-body pre { margin: 0; height: 100%; overflow: auto; padding: 16px; font: 13px/1.5 var(--mono); color: var(--fg); background: var(--bg-code); }
@@ -478,7 +510,7 @@ canvas { display: block; }
 
 /* ---------- responsive ---------- */
 @media (max-width: 900px) {
-  .app, .app.canvas-open, .app.collapsed.canvas-open { grid-template-columns: 0 1fr 0; }
+  .app, .app.canvas-open, .app.collapsed.canvas-open, .app.research-open, .app.collapsed.research-open { grid-template-columns: 0 1fr 0; }
 
   /* Both panels are always in the layout here (position: fixed, full height)
      so a real `transform` transition has something to slide — a grid track
@@ -491,7 +523,7 @@ canvas { display: block; }
   }
   .app:not(.collapsed) .sidebar { transform: translateX(0); }
 
-  .canvas-panel {
+  .canvas-panel, .research-panel {
     display: flex; position: fixed; inset: 0 0 0 0; z-index: 25;
     padding-top: env(safe-area-inset-top);
     transform: translateX(100%);
@@ -500,7 +532,8 @@ canvas { display: block; }
     transition: transform var(--panel-slide) var(--ease), visibility 0s linear var(--panel-slide);
   }
   .app.canvas-open .canvas-panel { transform: translateX(0); }
-  .canvas-head { padding-top: max(8px, env(safe-area-inset-top)); }
+  .app.research-open .research-panel { transform: translateX(0); }
+  .canvas-head, .research-head { padding-top: max(8px, env(safe-area-inset-top)); }
 
   /* touch targets grow without the icons themselves looking oversized */
   .icon-btn { width: 40px; height: 40px; }
@@ -593,15 +626,15 @@ canvas { display: block; }
 .is-desktop .topbar input { -webkit-app-region: no-drag; }
 
 /* Whichever pane actually reaches the top-right corner is the one that has to
-   dodge the window buttons — that's the topbar normally, the canvas head once
-   the canvas is open. */
-.is-desktop .app:not(.canvas-open) .topbar { padding-right: calc(14px + var(--caption-controls-w)); }
-.is-desktop .canvas-head {
+   dodge the window buttons — that's the topbar normally, the canvas or
+   research head once one of those panels is open. */
+.is-desktop .app:not(.canvas-open):not(.research-open) .topbar { padding-right: calc(14px + var(--caption-controls-w)); }
+.is-desktop .canvas-head, .is-desktop .research-head {
   -webkit-app-region: drag;
   min-height: var(--caption-h);
   padding-right: calc(10px + var(--caption-controls-w));
 }
-.is-desktop .canvas-head button { -webkit-app-region: no-drag; }
+.is-desktop .canvas-head button, .is-desktop .research-head button { -webkit-app-region: no-drag; }
 
 /* ---------- research mode ---------- */
 /* A running transcript of what the browser did, replacing the thinking

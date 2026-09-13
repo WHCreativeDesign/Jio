@@ -201,8 +201,12 @@ ipcMain.handle('jio:check-for-updates', () => checkForUpdates(true));
 ipcMain.handle('jio:quit-and-install', () => autoUpdater.quitAndInstall());
 
 /* ---------- research browser (real, visible, jio-driven Chromium) ---------- */
-ipcMain.handle('jio:browser-open', () => Browser.open());
-ipcMain.handle('jio:browser-close', () => Browser.close());
+// open()/hide() attach or hide the embedded view; setBounds keeps it glued to
+// wherever js/chat.js's ResizeObserver reports the research panel placeholder
+// sitting, every time that panel moves or resizes.
+ipcMain.handle('jio:browser-open', () => { Browser.attach(mainWindow); return Browser.open(); });
+ipcMain.handle('jio:browser-hide', () => Browser.hide());
+ipcMain.handle('jio:browser-set-bounds', (_e, rect) => Browser.setBounds(rect));
 ipcMain.handle('jio:browser-navigate', (_e, url) => Browser.navigate(url));
 ipcMain.handle('jio:browser-read', () => Browser.read());
 ipcMain.handle('jio:browser-screenshot', () => Browser.screenshot());
@@ -243,6 +247,6 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (llamaProc) llamaProc.kill();
-  Browser.close();
+  Browser.detach();
   if (process.platform !== 'darwin') app.quit();
 });

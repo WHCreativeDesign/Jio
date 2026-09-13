@@ -13,6 +13,7 @@ const fs = require('fs');
 const http = require('http');
 const https = require('https');
 const { spawn } = require('child_process');
+const { Browser } = require('./browser');
 
 const isDev = !app.isPackaged;
 const WEB_DIR = path.join(__dirname, '..', 'web');
@@ -199,6 +200,18 @@ ipcMain.handle('jio:app-version', () => app.getVersion());
 ipcMain.handle('jio:check-for-updates', () => checkForUpdates(true));
 ipcMain.handle('jio:quit-and-install', () => autoUpdater.quitAndInstall());
 
+/* ---------- research browser (real, visible, jio-driven Chromium) ---------- */
+ipcMain.handle('jio:browser-open', () => Browser.open());
+ipcMain.handle('jio:browser-close', () => Browser.close());
+ipcMain.handle('jio:browser-navigate', (_e, url) => Browser.navigate(url));
+ipcMain.handle('jio:browser-read', () => Browser.read());
+ipcMain.handle('jio:browser-screenshot', () => Browser.screenshot());
+ipcMain.handle('jio:browser-click', (_e, id) => Browser.click(id));
+ipcMain.handle('jio:browser-type', (_e, id, text) => Browser.type(id, text));
+ipcMain.handle('jio:browser-press-enter', (_e, id) => Browser.pressEnter(id));
+ipcMain.handle('jio:browser-scroll', (_e, dir) => Browser.scroll(dir));
+ipcMain.handle('jio:browser-back', () => Browser.back());
+
 /* ---------- app lifecycle ---------- */
 app.whenReady().then(async () => {
   await startStaticServer();
@@ -230,5 +243,6 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (llamaProc) llamaProc.kill();
+  Browser.close();
   if (process.platform !== 'darwin') app.quit();
 });

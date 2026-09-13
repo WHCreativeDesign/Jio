@@ -49,6 +49,35 @@ default model comfortably fits in 4GB.
   OpenAI-compatible SSE shape the cloud proxy already does, so the existing
   reader in `js/supa.js` needed no changes to parse it.
 
+## Research mode
+
+A "Research" segment next to Chat/Canvas that gives jio a real, visible
+Chromium window (`desktop/src/browser.js`) it drives itself — navigate,
+click, type, scroll, read the page back — to answer questions that need
+actually looking something up, rather than guessing from training data.
+
+No native tool-calling: it's a plain-text loop (`runResearch` in
+`js/chat.js`), one `ACTION: name(args)` line per turn, same shape as the
+canvas edit mode's SEARCH/REPLACE protocol and for the same reason — a model
+hallucinating tool-call JSON nobody asked for is a real failure mode this
+codebase already hit once, and a loop that has to work identically across
+four unrelated providers can't lean on any one of their native function-
+calling formats anyway.
+
+Every step, the browser is read back two ways:
+- **Text navigation** (`browser.read()`): a numbered list of visible
+  clickable/typeable elements plus the page's visible text — a plain
+  accessibility-style reading any text model can act on. Used for every
+  provider.
+- **Vision**: gemini's endpoint is the one verified here to accept
+  OpenAI-shaped image content, so when the selected model is gemini it also
+  gets a screenshot alongside that same numbering — a bonus on top of text
+  nav, not a replacement for it.
+
+Desktop-only: it needs an OS-level browser window electron opens, so the
+Research button stays hidden on the GitHub Pages build (`window.jioDesktop`
+doesn't exist there).
+
 ## Running it
 
 ```
@@ -76,6 +105,14 @@ experience all need a real trial run.
 
 ## Known gaps
 
+- **Research mode is unverified on a real Windows build.** The browser
+  driver (`desktop/src/browser.js`) uses only standard Electron APIs
+  (`BrowserWindow`, `webContents.executeJavaScript`, `capturePage`,
+  `sendInputEvent`) with nothing platform-specific, and the DOM read/click/
+  type scripts were exercised against a real Chromium page — but the actual
+  in-app loop (model output -> action -> browser -> back to the model) needs
+  a real trial run, ideally against a handful of genuinely different sites
+  (a search engine, a form, an infinite-scroll page) before trusting it.
 - **Unsigned installer.** Windows SmartScreen will warn ("unrecognized
   publisher") until this is signed with a code-signing certificate — those
   cost money and aren't set up here. Worth doing before wide distribution.

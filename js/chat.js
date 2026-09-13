@@ -66,7 +66,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
 
   let chats = [];
   let current = null;          // { id, title, messages: [{role, content}] }
-  let mascot, abort = null, canvasMode = false, booted = false;
+  let mascot, abort = null, canvasMode = false, researchMode = false, booted = false;
 
   /* ---------- theme ---------- */
   const theme = (t) => { document.documentElement.dataset.theme = t; try { localStorage.setItem('jio.theme', t); } catch (e) {} };
@@ -242,7 +242,11 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
      caption bar and paints its own in jio's colors, so the page has to reserve
      room for the window buttons itself — see CAPTION_H in desktop/src/main.js. */
   function markDesktopChrome() {
-    if (window.jioDesktop) document.documentElement.classList.add('is-desktop');
+    if (!window.jioDesktop) return;
+    document.documentElement.classList.add('is-desktop');
+    // research mode drives a real OS browser window electron opens — nothing
+    // to open on the GitHub Pages build, so the button stays hidden there
+    const btn = $('#research-btn'); if (btn) btn.hidden = false;
   }
   function setupLocalModel() {
     if (!window.jioDesktop) return;
@@ -306,7 +310,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
   }
 
   /* ---------- account menu ---------- */
-  const VERSION = '0.2.0';
+  const VERSION = '0.3.0';
   function setupMeMenu() {
     const btn = $('#me'), menu = $('#me-menu');
     $('#me-version').textContent = `jio v${VERSION}`;
@@ -550,9 +554,11 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     });
     document.querySelectorAll('.seg-btn').forEach(b => b.addEventListener('click', () => {
       canvasMode = b.dataset.mode === 'canvas';
+      researchMode = b.dataset.mode === 'research';
       document.querySelectorAll('.seg-btn').forEach(x => x.classList.toggle('on', x === b));
       app.classList.toggle('canvas-open', canvasMode);
-      mascot.react(canvasMode ? 'excited' : 'neutral', 1000);
+      mascot.react(canvasMode ? 'excited' : researchMode ? 'curious' : 'neutral', 1000);
+      if (researchMode) window.jioDesktop?.browser.open().catch(() => {});
     }));
   }
 
@@ -580,6 +586,8 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     setBubble(bubble, '', true);
     scrollBottom();
     mascot.afterJudge(() => { mascot.moveTo(node.querySelector('.who')); mascot.work(); });
+
+    if (researchMode) { await runResearch(text, bubble); return; }
 
     // once there's already canvas code, ask for a diff against it instead of
     // the whole file every turn — smaller, faster responses, and it stops
@@ -654,6 +662,154 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
         full = `error: ${err.message}`;
         mascot.done(false);
       }
+    } finally {
+      abort = null; $('#send').classList.remove('stop');
+      current.messages.push({ role: 'assistant', content: full });
+      if (current.id) {
+        Data.addMessage(current.id, 'assistant', full).catch(() => {});
+        Data.touchChat(current.id).catch(() => {});
+      }
+      $('#input').focus();
+    }
+  }
+
+  /* ---------- research mode: jio driving a real browser ----------
+     Desktop-only (needs an OS-level Chromium window — see desktop/src/browser.js
+     and window.jioDesktop.browser, exposed by preload.js). A plain-text ReAct
+     loop rather than native tool-calling: this codebase already hit a model
+     hallucinating <tool_call> XML nobody asked for (see CANVAS_EDIT_SYSTEM's
+     own note above), and a loop that works identically across four unrelated
+     providers can't lean on any one of their function-calling formats anyway.
+     One ACTION: line per turn, the result comes back as the next OBSERVATION.
+
+     Vision: only gemini's endpoint here is verified to accept OpenAI-shaped
+     image content, so it alone gets a screenshot alongside the same numbered
+     text reading every model gets — "text based navigation" is the universal
+     path, a screenshot is the bonus a vision-capable model gets on top. */
+  const RESEARCH_STEPS = 14;
+  const RESEARCH_SYSTEM = `You are jio, driving a real web browser to research the user's request. You can see either a numbered list of the page's clickable/typeable elements and its visible text, or — when noted — a screenshot alongside that same numbering.
+
+After a short line or two of reasoning, end your reply with EXACTLY one line in this exact form and nothing else on it:
+ACTION: name(args)
+
+Do NOT use JSON, XML, markdown code fences, or any tool-call/function-call syntax — a single plain ACTION: line, always the last line of your reply.
+
+Available actions:
+  navigate("https://...")   go straight to a URL — including a search engine's results URL, e.g. https://www.google.com/search?q=your+query
+  click(N)                  click the numbered element from the observation you were just shown
+  type(N, "text")           type into numbered input/textarea N (does not submit)
+  enter(N)                  press Enter in numbered field N (submits most search/forms)
+  scroll("down") / scroll("up")
+  back()
+  done("your answer")       you have enough — this ends research; the text becomes your reply to the user
+
+Rules:
+- Exactly one ACTION per turn.
+- Numbers refer only to the most recent observation — if the page changed, re-read before clicking.
+- Prefer navigate() straight to a search results URL over guessing a specific address.
+- Call done(...) the moment you can answer. If you're running out of turns, call done() with your best answer and say plainly what you could not confirm.`;
+
+  function parseAction(text) {
+    const lines = text.trim().split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const m = lines[i].match(/^ACTION:\s*(\w+)\((.*)\)\s*$/);
+      if (!m) continue;
+      const [, name, rawArgs] = m;
+      const args = [];
+      const re = /\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|([^,]+))\s*(?:,|$)/g;
+      let a; while ((a = re.exec(rawArgs)) && a[0]) {
+        if (a[1] !== undefined) args.push(a[1].replace(/\\(.)/g, '$1'));
+        else if (a[2] !== undefined) args.push(a[2].replace(/\\(.)/g, '$1'));
+        else if (a[3] !== undefined && a[3].trim()) args.push(a[3].trim());
+        if (re.lastIndex >= rawArgs.length) break;
+      }
+      return { name, args };
+    }
+    return null;
+  }
+
+  const RESEARCH_ICON = { navigate: '🌐', click: '🖱', type: '⌨️', enter: '⏎', scroll: '↕️', back: '↩️' };
+  function logStep(logEl, text) {
+    const line = document.createElement('div');
+    line.className = 'research-step';
+    line.textContent = text;
+    logEl.appendChild(line);
+    scrollBottom();
+    return line;
+  }
+
+  async function runResearch(text, bubble) {
+    bubble.innerHTML = '<div class="research-log"></div>';
+    const logEl = bubble.querySelector('.research-log');
+    abort = new AbortController();
+    $('#send').classList.add('stop');
+    mascot.work();
+
+    const model = $('#model').value === 'auto' ? 'gemini' : $('#model').value;
+    // $('#model')'s values are bare provider names ('gemini', 'groq', ...), not
+    // "provider:model" — Models.providerOf() assumes the latter and would
+    // misread a bare id, so compare directly instead
+    const vision = model === 'gemini';
+    logStep(logEl, vision ? '👁 researching with vision — opening browser…' : '📄 researching (text navigation) — opening browser…');
+
+    let full = 'research stopped before reaching an answer.';
+    let route = '';
+    try {
+      const first = await window.jioDesktop.browser.navigate('https://www.google.com');
+      const messages = [
+        { role: 'system', content: RESEARCH_SYSTEM },
+        { role: 'user', content: `Research task: ${text}\n\nCurrent page (${first.url} — "${first.title}"):\n${first.elements.join('\n') || '(no interactive elements found)'}\n\nPage text:\n${first.text}` },
+      ];
+
+      for (let step = 0; step < RESEARCH_STEPS; step++) {
+        const reply = await Data.stream({
+          model, messages, signal: abort.signal, temperature: 0.3,
+          onRoute: (r) => { route = r; },
+          onToken: () => {},
+        });
+        const action = parseAction(reply);
+        if (!action) { full = stripMood(reply) || full; logStep(logEl, '⚠ lost the thread — stopping with what it has'); break; }
+
+        if (action.name === 'done') { full = action.args[0] || stripMood(reply); logStep(logEl, '✅ done'); break; }
+
+        let obs, desc;
+        try {
+          switch (action.name) {
+            case 'navigate': desc = `${RESEARCH_ICON.navigate} ${action.args[0]}`; obs = await window.jioDesktop.browser.navigate(action.args[0]); break;
+            case 'click': desc = `${RESEARCH_ICON.click} click [${action.args[0]}]`; obs = await window.jioDesktop.browser.click(action.args[0]); break;
+            case 'type': desc = `${RESEARCH_ICON.type} type "${action.args[1]}" into [${action.args[0]}]`; obs = await window.jioDesktop.browser.type(action.args[0], action.args[1]); break;
+            case 'enter': desc = `${RESEARCH_ICON.enter} enter on [${action.args[0]}]`; obs = await window.jioDesktop.browser.pressEnter(action.args[0]); break;
+            case 'scroll': desc = `${RESEARCH_ICON.scroll} scroll ${action.args[0] || 'down'}`; obs = await window.jioDesktop.browser.scroll(action.args[0]); break;
+            case 'back': desc = `${RESEARCH_ICON.back} back`; obs = await window.jioDesktop.browser.back(); break;
+            default: desc = `⚠ unknown action "${action.name}"`; obs = await window.jioDesktop.browser.read();
+          }
+        } catch (e) { obs = await window.jioDesktop.browser.read().catch(() => null); desc = `⚠ ${action.name} failed: ${e.message}`; }
+        logStep(logEl, desc || action.name);
+
+        messages.push({ role: 'assistant', content: reply });
+        const obsText = obs
+          ? `OBSERVATION — ${obs.url} — "${obs.title}":\n${obs.elements.join('\n') || '(no interactive elements found)'}\n\nPage text:\n${obs.text}`
+          : 'OBSERVATION: that action failed and the page could not be re-read.';
+        if (vision) {
+          const shot = await window.jioDesktop.browser.screenshot().catch(() => null);
+          messages.push({ role: 'user', content: shot
+            ? [{ type: 'text', text: obsText }, { type: 'image_url', image_url: { url: `data:image/png;base64,${shot}` } }]
+            : obsText });
+        } else {
+          messages.push({ role: 'user', content: obsText });
+        }
+        if (step === RESEARCH_STEPS - 1) { full = 'reached the research step limit before finding a confident answer.'; logStep(logEl, '⏱ step limit reached'); }
+      }
+      const answer = document.createElement('div');
+      answer.className = 'research-answer';
+      answer.innerHTML = render(full);
+      bubble.appendChild(answer);
+      scrollBottom();
+      showRoute(route);
+      mascot.done(true);
+    } catch (err) {
+      if (err.name === 'AbortError') { logStep(logEl, '⏹ stopped'); full = full || '_stopped_'; mascot.done(true); }
+      else { logStep(logEl, `⚠ ${err.message}`); full = `error: ${err.message}`; mascot.done(false); }
     } finally {
       abort = null; $('#send').classList.remove('stop');
       current.messages.push({ role: 'assistant', content: full });

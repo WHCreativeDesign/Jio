@@ -1,6 +1,6 @@
 {
   "name": "jio-desktop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "jio, packaged as a Windows desktop app with an offline local model.",
   "main": "src/main.js",

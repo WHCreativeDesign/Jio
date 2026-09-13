@@ -198,6 +198,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
       if (best) o.title = Models.label(best);
       sel.appendChild(o);
     });
+    markDesktopChrome();
     refreshLocalOption(); // desktop-only; index.html on the web never sets window.jioDesktop
     // a remembered choice whose provider has since dropped out must not stick
     sel.value = [...sel.options].some(o => o.value === want) ? want : 'auto';
@@ -236,6 +237,12 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     if (!o) { o = document.createElement('option'); o.value = 'local'; sel.appendChild(o); }
     o.textContent = localOptionLabel(lastLocalStatus);
     o.disabled = !lastLocalStatus || lastLocalStatus.state !== 'ready';
+  }
+  /* The Electron shell hides Windows' native (system-themed, usually white)
+     caption bar and paints its own in jio's colors, so the page has to reserve
+     room for the window buttons itself — see CAPTION_H in desktop/src/main.js. */
+  function markDesktopChrome() {
+    if (window.jioDesktop) document.documentElement.classList.add('is-desktop');
   }
   function setupLocalModel() {
     if (!window.jioDesktop) return;

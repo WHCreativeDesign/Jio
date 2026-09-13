@@ -26,6 +26,7 @@
   --r-lg: 20px;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.28), 0 8px 24px rgba(0, 0, 0, 0.3);
   --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+  --panel-slide: 0.46s;
 }
 [data-theme="light"] {
   --bg: #faf9f5;
@@ -96,10 +97,15 @@ canvas { display: block; }
 @media (prefers-reduced-motion: reduce) { .boot-mark { animation: none; } }
 
 /* ---------- app frame ---------- */
-.app { display: grid; grid-template-columns: 280px 1fr 0; height: 100vh; height: 100dvh; transition: grid-template-columns 0.32s var(--ease); }
-.app.collapsed { grid-template-columns: 0 1fr 0; }
+/* Every state writes the canvas track as a minmax(), including when it's
+   closed. That's load-bearing: grid tracks only interpolate between values of
+   the same type, so a plain `0` -> `minmax(380px, 46%)` is a discrete jump —
+   the canvas popped open while the sidebar (length -> length) slid correctly.
+   Same reason the sidebar track is `0px`, not `0`. */
+.app { display: grid; grid-template-columns: 280px 1fr minmax(0px, 0%); height: 100vh; height: 100dvh; transition: grid-template-columns var(--panel-slide) var(--ease); }
+.app.collapsed { grid-template-columns: 0px 1fr minmax(0px, 0%); }
 .app.canvas-open { grid-template-columns: 280px 1fr minmax(380px, 46%); }
-.app.collapsed.canvas-open { grid-template-columns: 0 1fr minmax(380px, 50%); }
+.app.collapsed.canvas-open { grid-template-columns: 0px 1fr minmax(380px, 50%); }
 
 /* ---------- sidebar ---------- */
 .sidebar {
@@ -407,12 +413,19 @@ canvas { display: block; }
 .status { display: inline-flex; align-items: center; gap: 6px; }
 
 /* ---------- canvas panel ---------- */
-.canvas-panel { border-left: 1px solid var(--line); background: var(--bg-side); display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
-/* desktop only: the panel lives in a 0-width grid track when closed, so there's
-   nothing to click through anyway, but display:none keeps it out of tab order.
-   Mobile (below) keeps it always rendered, off-screen, so it has something to
-   slide from. */
-@media (min-width: 901px) { .app:not(.canvas-open) .canvas-panel { display: none; } }
+.canvas-panel {
+  border-left: 1px solid var(--line); background: var(--bg-side);
+  display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden;
+  /* Hidden rather than display:none so the track has something to animate; the
+     delay holds it visible for the whole closing slide, then drops it out of
+     the tab order once the track has finished collapsing. Opening flips it
+     back immediately (delay 0 below). */
+  visibility: hidden;
+  transition: visibility 0s linear var(--panel-slide), border-left-color var(--panel-slide) var(--ease);
+}
+.app.canvas-open .canvas-panel { visibility: visible; transition-delay: 0s; }
+/* the 1px border would otherwise sit visible against a 0-width track */
+.app:not(.canvas-open) .canvas-panel { border-left-color: transparent; }
 .canvas-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px 8px 12px; border-bottom: 1px solid var(--line); }
 .tabs { display: flex; gap: 2px; }
 .tab { padding: 5px 12px; border-radius: 999px; font-size: 13.5px; color: var(--fg-3); transition: background-color 0.16s var(--ease), color 0.16s var(--ease); }
@@ -469,7 +482,7 @@ canvas { display: block; }
     position: fixed; inset: 0 auto 0 0; width: min(320px, 82vw); z-index: 30; box-shadow: var(--shadow);
     padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
     transform: translateX(-100%);
-    transition: transform 0.3s var(--ease);
+    transition: transform var(--panel-slide) var(--ease);
   }
   .app:not(.collapsed) .sidebar { transform: translateX(0); }
 
@@ -477,7 +490,9 @@ canvas { display: block; }
     display: flex; position: fixed; inset: 0 0 0 0; z-index: 25;
     padding-top: env(safe-area-inset-top);
     transform: translateX(100%);
-    transition: transform 0.3s var(--ease);
+    /* keep the same held-visibility trick as desktop, or the closing slide
+       would vanish the instant the class comes off */
+    transition: transform var(--panel-slide) var(--ease), visibility 0s linear var(--panel-slide);
   }
   .app.canvas-open .canvas-panel { transform: translateX(0); }
   .canvas-head { padding-top: max(8px, env(safe-area-inset-top)); }
@@ -546,3 +561,39 @@ canvas { display: block; }
 @media (prefers-reduced-motion: reduce) {
   .app, .sidebar, .canvas-panel { transition: none; }
 }
+
+/* ---------- Electron shell chrome ---------- */
+/* Only applies inside the desktop app (js/chat.js adds .is-desktop when
+   window.jioDesktop exists); on GitHub Pages none of this is reachable.
+   The native Windows caption bar is hidden there and repainted in jio's own
+   color by main.js, which leaves two jobs for the page: reserve the top-right
+   strip the minimise/maximise/close buttons float over, and give the window
+   somewhere to be dragged by. */
+.is-desktop {
+  --caption-h: 36px;
+  /* Windows' three window buttons; generous, since the strip is only empty space */
+  --caption-controls-w: 146px;
+}
+.is-desktop .side-head,
+.is-desktop .topbar {
+  -webkit-app-region: drag;
+  min-height: var(--caption-h);
+}
+/* the drag region would otherwise swallow clicks on anything inside it */
+.is-desktop .side-head button,
+.is-desktop .side-head a,
+.is-desktop .topbar button,
+.is-desktop .topbar a,
+.is-desktop .topbar select,
+.is-desktop .topbar input { -webkit-app-region: no-drag; }
+
+/* Whichever pane actually reaches the top-right corner is the one that has to
+   dodge the window buttons — that's the topbar normally, the canvas head once
+   the canvas is open. */
+.is-desktop .app:not(.canvas-open) .topbar { padding-right: calc(14px + var(--caption-controls-w)); }
+.is-desktop .canvas-head {
+  -webkit-app-region: drag;
+  min-height: var(--caption-h);
+  padding-right: calc(10px + var(--caption-controls-w));
+}
+.is-desktop .canvas-head button { -webkit-app-region: no-drag; }

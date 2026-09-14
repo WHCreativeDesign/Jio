@@ -162,7 +162,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
       e.preventDefault();
       const email = $('#auth-email').value, pass = $('#auth-pass').value;
       go.disabled = true; note.textContent = 'one sec…'; note.className = 'note';
-      authEyes.set('thinking');
+      authEyes.set('focused');
       try {
         await (authMode === 'up' ? Auth.signUp(email, pass) : Auth.signIn(email, pass));
         authEyes.set('happy');
@@ -331,7 +331,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
   }
 
   /* ---------- account menu ---------- */
-  const VERSION = '0.6.0';
+  const VERSION = '0.7.0';
   function setupMeMenu() {
     const btn = $('#me'), menu = $('#me-menu');
     $('#me-version').textContent = `jio v${VERSION}`;
@@ -445,9 +445,6 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     bubble.classList.remove('raw', 'cursor');
     bubble.innerHTML = '<div class="thinking"><span class="thinking-text"></span></div>';
     const el = bubble.querySelector('.thinking-text');
-    // thought particles come off the eyes themselves, not this row — the
-    // mascot owns them so they follow it around (js/thinkfx.js)
-    if (mascot) mascot.think(true);
     let i = 0;
     const show = () => {
       el.textContent = THINKING_PHRASES[i % THINKING_PHRASES.length];
@@ -461,7 +458,6 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
   }
   function stopThinking(bubble) {
     if (bubble._thinkTimer) { clearInterval(bubble._thinkTimer); bubble._thinkTimer = null; }
-    if (mascot) mascot.think(false);
   }
   /* Local-only: a genuine one-line plan from the model itself, streamed live
      into the same shimmering status header the canned phrases use. Purely

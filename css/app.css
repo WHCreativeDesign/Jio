@@ -434,19 +434,6 @@ canvas { display: block; }
   .thinking-text.enter { animation: none; }
 }
 
-/* Thought particles beside the eyes (js/thinkfx.js). A child of .mascot, so
-   it travels with the eyes wherever they go — including off inspecting a
-   message. Centred on them and larger than the mascot's own box so symbols
-   have room to drift out of it. The `.mascot canvas` rule further down would
-   otherwise claim this canvas too, hence the more specific selector resetting
-   size, filter and z-order. */
-.mascot .think-fx {
-  position: absolute; left: 50%; top: 50%;
-  width: 170px; height: 104px;
-  transform: translate(-50%, -50%);
-  filter: none; pointer-events: none; z-index: -1;
-  animation: fx-in 0.45s var(--ease) both;
-}
 @keyframes fx-in { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .mascot .think-fx { animation: none; opacity: 0.6; } }
 

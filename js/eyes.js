@@ -33,7 +33,6 @@
     suspicious: both({ h: 0.5, topIn: 0.25, topOut: 0.35, botIn: 0.2, botOut: 0.2, r: [0.2, 0.2, 0.2, 0.2] }),
     confused:   E({ h: 0.6, topIn: 0.35, topOut: 0.15, r: [0.3, 0.3, 0.3, 0.3] }, { w: 1.1, h: 1.15, r: [0.7, 0.7, 0.7, 0.7], dy: -0.08 }),
     curious:    E({ w: 1.15, h: 1.25, r: [0.7, 0.7, 0.7, 0.7], dy: -0.08 }, { h: 0.9 }, 'tilt'),
-    thinking:   both({ h: 0.8, topIn: 0.25, topOut: 0.25, dx: 0.35, dy: -0.3, r: [0.5, 0.5, 0.5, 0.5] }, 'ponder'),
     focused:    both({ h: 0.55, r: [0.25, 0.25, 0.25, 0.25], w: 1.1 }),
     bored:      both({ h: 0.55, topIn: 0.4, topOut: 0.4, r: [0.15, 0.15, 0.5, 0.5], dy: 0.1 }, 'sigh'),
     smirk:      E({ h: 0.7, topIn: 0.15, topOut: 0.3, r: [0.4, 0.4, 0.4, 0.4] }, { h: 0.8, botIn: 0.5, botOut: 0.3, r: [0.9, 0.9, 0.2, 0.2] }),
@@ -161,7 +160,6 @@
       if (fx === 'tremble') { gx = Math.sin(ft * 45) * ew * 0.015; gy = Math.cos(ft * 38) * eh * 0.012; }
       if (fx === 'drift') gy = Math.sin(ft * 1.2) * eh * 0.05;
       if (fx === 'tilt') grot = Math.sin(ft * 1.5) * 6;
-      if (fx === 'ponder') gx = Math.sin(ft * 0.8) * ew * 0.08;
       if (fx === 'sigh') gy = Math.sin(ft * 0.9) * eh * 0.04;
       if (fx === 'glitch') jitter = Math.random() < 0.12 ? 1 : 0;
 

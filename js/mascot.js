@@ -193,44 +193,29 @@
        that snaps back instantly doesn't read as real — then eases to neutral. */
     done(ok = true, mood = null) {
       this.stopInspect();
-      this.think(false);
       this.busy = false;
       clearTimeout(this._reactT);
       if (mood) { this.set(mood); this._reactT = setTimeout(() => this.set('neutral'), 2200); }
       else { this.set('neutral'); this.react(ok ? 'happy' : 'sad', 1400); }
     }
 
-    /* Thought particles beside the eyes while a reply is being worked out
-       (js/thinkfx.js). Lives on the mascot element rather than in the thread,
-       so it rides along with every hop of an inspection. */
-    think(on) {
-      if (on) {
-        if (this._fx || !global.ThinkFX) return;
-        this._fx = new ThinkFX(this.el);
-      } else if (this._fx) {
-        this._fx.destroy(); this._fx = null;
-      }
-    }
-
     /* ---------- inspection ----------
        For a reply that's taking a while, jio stops sitting politely in its
-       slot and goes and *looks* at what it was asked — dropping below the
-       message, coming up the side, hanging over the top, leaning in close.
+       slot and goes and *looks* at what it was asked — beside the message
+       or below it, gently rotated toward it, never hanging over the top.
        The gaze is aimed at the message the whole time (see aimAt below), so
        wherever it drifts to, it's visibly still reading the same thing.
 
        Vantage points are expressed as a fraction of the message's own box
        plus a gap, so this works the same on a one-line question and a long
-       pasted one. `lean` is how far in it gets: >1 is a close peer, <1 is
-       sitting back to consider. */
+       pasted one. `tilt` is a small rotation only — never a skew or a resize
+       of the eyes themselves. */
     static get VANTAGE() {
       return [
-        { ax: -0.04, ay: 0.50, gx: -20, gy: 0, lean: 1.00, tilt: 0, mood: 'curious' },
-        { ax: 0.30, ay: -0.02, gx: 0, gy: -22, lean: 0.92, tilt: -7, mood: 'focused' },
-        { ax: 1.04, ay: 0.46, gx: 20, gy: 0, lean: 1.00, tilt: 0, mood: 'thinking' },
-        { ax: 0.72, ay: 1.02, gx: 0, gy: 24, lean: 1.18, tilt: 8, mood: 'curious' },
-        { ax: 0.14, ay: 1.02, gx: 0, gy: 20, lean: 1.05, tilt: -5, mood: 'focused' },
-        { ax: -0.03, ay: 0.12, gx: -16, gy: -10, lean: 1.22, tilt: -10, mood: 'curious' },
+        { ax: -0.04, ay: 0.42, gx: -20, gy: 0, lean: 1.00, tilt: -4, mood: 'curious' },
+        { ax: 1.04, ay: 0.42, gx: 20, gy: 0, lean: 1.00, tilt: 4, mood: 'focused' },
+        { ax: 0.72, ay: 1.02, gx: 0, gy: 22, lean: 1.00, tilt: 5, mood: 'curious' },
+        { ax: 0.14, ay: 1.02, gx: 0, gy: 22, lean: 1.00, tilt: -5, mood: 'focused' },
       ];
     }
 

@@ -115,6 +115,15 @@ canvas { display: block; }
 
 /* ---------- sidebar ---------- */
 .sidebar {
+  /* Explicit, not relied-on auto-placement: on mobile, sidebar/scrim/canvas/
+     research all become position:fixed (see the responsive block below),
+     which pulls them out of normal grid flow — and Chromium (and per spec)
+     then auto-places the one child still in flow, #main, starting from
+     column 1, landing it in the SIDEBAR's 0-width track instead of its own.
+     Pinning every panel's column explicitly (sidebar here, main below,
+     canvas/research panel already pinned to column 3) means placement never
+     depends on which siblings happen to be in or out of grid flow. */
+  grid-column: 1;
   background: var(--bg-side);
   display: flex; flex-direction: column; overflow: hidden; min-width: 0; min-height: 0; white-space: nowrap;
 }
@@ -212,7 +221,7 @@ canvas { display: block; }
 /* Grid items default to min-height: auto, which lets a tall child (the
    accumulated thread) grow this past its 100% and push the whole app out
    of the viewport instead of clipping and scrolling internally. */
-.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; height: 100%; }
+.main { grid-column: 2; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; height: 100%; }
 .topbar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; min-height: 50px; flex: none; }
 .only-collapsed { display: none; }
 .app.collapsed .only-collapsed { display: inline-grid; }

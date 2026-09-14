@@ -76,7 +76,28 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
 
   /* ---------- markdown ---------- */
   marked.setOptions({ breaks: true, gfm: true });
-  const render = (md) => DOMPurify.sanitize(marked.parse(md), { ADD_ATTR: ['target'] });
+  const render = (md) => DOMPurify.sanitize(marked.parse(md.replace(MATH_INLINE, (_, inner) => `\\(${inner}\\)`)), { ADD_ATTR: ['target'] });
+
+  /* Math. $$...$$ and \[...\]/\(...\) are unambiguous, so KaTeX's own
+     auto-render scans for those directly. A bare single $...$ is NOT handed
+     to it as-is — models write LaTeX that way, but so does ordinary prose
+     ("$5 and $10"), and auto-render has no way to tell those apart. Promoting
+     only single-dollar spans that actually contain a LaTeX command (a
+     backslash) to \( \) first keeps real inline math working without
+     turning every currency mention into a KaTeX parse-error box. */
+  const MATH_INLINE = /\$([^\n$]*\\[a-zA-Z]+[^\n$]*)\$/g;
+  function renderMath(el) {
+    if (!window.renderMathInElement) return; // vendored katex not loaded (e.g. lab.html)
+    renderMathInElement(el, {
+      delimiters: [
+        { left: '$$', right: '$$', display: true },
+        { left: '\\[', right: '\\]', display: true },
+        { left: '\\(', right: '\\)', display: false },
+      ],
+      throwOnError: false,
+      errorCallback: () => {}, // leave unrenderable spans as plain text, not a red error box
+    });
+  }
   const HTML_BLOCK = /```html\s*\n([\s\S]*?)(```|$)/i;
   const extractHtml = (text) => { const m = text.match(HTML_BLOCK); return m ? m[1] : null; };
   const stripHtmlBlock = (t) => t.replace(HTML_BLOCK, '<div class="canvas-chip" data-open><span>▣</span><b>open in canvas</b></div>\n');
@@ -310,7 +331,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
   }
 
   /* ---------- account menu ---------- */
-  const VERSION = '0.4.1';
+  const VERSION = '0.4.2';
   function setupMeMenu() {
     const btn = $('#me'), menu = $('#me-menu');
     $('#me-version').textContent = `jio v${VERSION}`;
@@ -490,6 +511,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     bubble.classList.remove('cursor', 'raw');
     bubble._raw = '';
     bubble.innerHTML = render(stripHtmlBlock(text));
+    renderMath(bubble);
     const chip = bubble.querySelector('[data-open]');
     // an edit-mode reply has no ```html block of its own to re-extract later —
     // canvasSnapshot is the resulting file, captured at the time this ran
@@ -861,6 +883,7 @@ Rules:
       const answer = document.createElement('div');
       answer.className = 'research-answer';
       answer.innerHTML = render(full);
+      renderMath(answer);
       bubble.appendChild(answer);
       scrollBottom();
       showRoute(route);

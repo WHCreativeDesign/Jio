@@ -331,7 +331,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
   }
 
   /* ---------- account menu ---------- */
-  const VERSION = '0.4.3';
+  const VERSION = '0.5.0';
   function setupMeMenu() {
     const btn = $('#me'), menu = $('#me-menu');
     $('#me-version').textContent = `jio v${VERSION}`;

@@ -20,6 +20,8 @@
       this.cur = null;          // {x,y,w,h,r}
       this.from = null; this.to = null; this.t0 = 0; this.dur = 0;
       this.judgeScale = 1; this.judgeShakeX = 0; this.judgeRot = 0;
+      this.hoverLift = 0; this.hoverTilt = 0;
+      this._inspect = null;
       this._judging = false; this._judgeQueue = [];
       this.raf = requestAnimationFrame(this.tick.bind(this));
 
@@ -77,7 +79,13 @@
       // destination and land as soon as it's real.
       if (slot.offsetParent === null) { this.want = animate; this.land(); return; }
       this.want = null;
-      const tgt = this.measure(slot);
+      this.glideTo(this.measure(slot), animate);
+    }
+
+    /* The tween itself, against any rect — moveTo() measures a DOM slot and
+       hands it here; inspect() computes vantage points around a message and
+       does the same. Nothing below this line cares which. */
+    glideTo(tgt, animate = true, durScale = 1) {
       if (!this.cur || !animate) { this.cur = tgt; this.to = null; this.apply(); return; }
       // start from the on-screen position, so a layout change mid-flight can't teleport the launch point
       const from = this.here();
@@ -85,7 +93,7 @@
       if (dist < 1 && Math.abs(tgt.w - from.w) < 1) { this.cur = tgt; this.to = null; this.apply(); return; }
       this.cur = from; this.from = from; this.to = tgt;
       this.t0 = performance.now();
-      this.dur = Math.min(900, Math.max(420, 320 + dist * 0.55));
+      this.dur = Math.min(900, Math.max(420, 320 + dist * 0.55)) * durScale;
       if (!this._judging) this.eyes.blink();
     }
 
@@ -112,6 +120,10 @@
 
     /* Layout shifted under us (streaming text, resize): follow without ceremony. */
     sync() {
+      // mid-inspection the mascot is deliberately away from its slot; letting
+      // sync() drag it back would cancel every hop the moment the thread
+      // reflows (which, while a reply streams in, is constantly)
+      if (this._inspect) return;
       if (!this.slot || !this.slot.isConnected || this.slot.offsetParent === null) return;
       // never got to land at all (boot happened behind a view transition)
       if (!this.cur) { this.moveTo(this.slot, false); return; }
@@ -125,6 +137,20 @@
 
     tick(now) {
       this.raf = requestAnimationFrame(this.tick.bind(this));
+
+      /* Inspection drives itself from here: hop when the current pause is up,
+         aim the gaze every frame (the mascot is usually moving, so a gaze set
+         once at arrival would slide off the message), and hover in place
+         rather than sitting dead still between hops. */
+      if (this._inspect) {
+        const st = this._inspect;
+        if (!this.to && now >= st.hopAt) this.hop(now);
+        if (st.aim) this.aimAt(st.aim);
+        this.hoverLift = Math.sin(now / 620) * 2.2;
+        this.hoverTilt = (st.vantage ? st.vantage.tilt : 0) + Math.sin(now / 900) * 1.6;
+        if (!this.to) this.apply();
+      }
+
       if (!this.to) return;
       const p = Math.min(1, (now - this.t0) / this.dur);
       const e = easeOutExpo(p), s = easeInOut(p);
@@ -144,6 +170,8 @@
 
     apply(lean = 0, lift = 0, squash = 1) {
       const c = this.cur; if (!c) return;
+      lift += this.hoverLift || 0;
+      lean += this.hoverTilt || 0;
       this.el.style.transform = `translate(${c.x}px, ${c.y + lift}px)`;
       this.el.style.width = c.w + 'px'; this.el.style.height = c.h + 'px';
       const k = Math.min(c.w / CW, c.h / CH) * 0.86 * this.judgeScale;
@@ -164,10 +192,114 @@
     /* mood, if given (the reply's own {{mood:x}} tag), holds a while — an emotion
        that snaps back instantly doesn't read as real — then eases to neutral. */
     done(ok = true, mood = null) {
+      this.stopInspect();
+      this.think(false);
       this.busy = false;
       clearTimeout(this._reactT);
       if (mood) { this.set(mood); this._reactT = setTimeout(() => this.set('neutral'), 2200); }
       else { this.set('neutral'); this.react(ok ? 'happy' : 'sad', 1400); }
+    }
+
+    /* Thought particles beside the eyes while a reply is being worked out
+       (js/thinkfx.js). Lives on the mascot element rather than in the thread,
+       so it rides along with every hop of an inspection. */
+    think(on) {
+      if (on) {
+        if (this._fx || !global.ThinkFX) return;
+        this._fx = new ThinkFX(this.el);
+      } else if (this._fx) {
+        this._fx.destroy(); this._fx = null;
+      }
+    }
+
+    /* ---------- inspection ----------
+       For a reply that's taking a while, jio stops sitting politely in its
+       slot and goes and *looks* at what it was asked — dropping below the
+       message, coming up the side, hanging over the top, leaning in close.
+       The gaze is aimed at the message the whole time (see aimAt below), so
+       wherever it drifts to, it's visibly still reading the same thing.
+
+       Vantage points are expressed as a fraction of the message's own box
+       plus a gap, so this works the same on a one-line question and a long
+       pasted one. `lean` is how far in it gets: >1 is a close peer, <1 is
+       sitting back to consider. */
+    static get VANTAGE() {
+      return [
+        { ax: -0.04, ay: 0.50, gx: -20, gy: 0, lean: 1.00, tilt: 0, mood: 'curious' },
+        { ax: 0.30, ay: -0.02, gx: 0, gy: -22, lean: 0.92, tilt: -7, mood: 'focused' },
+        { ax: 1.04, ay: 0.46, gx: 20, gy: 0, lean: 1.00, tilt: 0, mood: 'thinking' },
+        { ax: 0.72, ay: 1.02, gx: 0, gy: 24, lean: 1.18, tilt: 8, mood: 'curious' },
+        { ax: 0.14, ay: 1.02, gx: 0, gy: 20, lean: 1.05, tilt: -5, mood: 'focused' },
+        { ax: -0.03, ay: 0.12, gx: -16, gy: -10, lean: 1.22, tilt: -10, mood: 'curious' },
+      ];
+    }
+
+    inspect(target) {
+      if (!target || this._inspect) return;
+      const base = this.cur ? { w: this.cur.w, h: this.cur.h, r: this.cur.r } : { w: 42, h: 24, r: 8 };
+      this._inspect = { el: target, base, i: -1, hopAt: 0, order: this.shuffledVantages() };
+      this.busy = true;
+      clearTimeout(this._reactT);
+      // gaze is aimed by hand from here, so the idle wander has to stop — and
+      // `track` is what lets a gaze be applied at all (see eyes.js draw()),
+      // so it goes on for the duration and off again after.
+      this._eyeState = { idle: this.eyes.idle, track: this.eyes.track };
+      this.eyes.idle = false; this.eyes.track = true;
+      this.set('curious');
+    }
+
+    shuffledVantages() {
+      const v = Mascot.VANTAGE.slice();
+      for (let i = v.length - 1; i > 0; i--) {
+        const j = (Math.random() * (i + 1)) | 0;
+        [v[i], v[j]] = [v[j], v[i]];
+      }
+      return v;
+    }
+
+    stopInspect(returnToSlot = true) {
+      if (!this._inspect) return;
+      this._inspect = null;
+      this.hoverLift = 0; this.hoverTilt = 0;
+      if (this._eyeState) { this.eyes.idle = this._eyeState.idle; this.eyes.track = this._eyeState.track; this._eyeState = null; }
+      this.eyes.look(0, 0);
+      if (returnToSlot && this.slot) this.moveTo(this.slot, true);
+    }
+
+    /* One hop: pick the next vantage around the message and glide there. */
+    hop(now) {
+      const st = this._inspect;
+      const el = st.el;
+      if (!el.isConnected || el.offsetParent === null) { this.stopInspect(); return; }
+      st.i++;
+      if (st.i >= st.order.length) { st.order = this.shuffledVantages(); st.i = 0; }
+      const v = st.order[st.i];
+      const b = this.wrap.getBoundingClientRect(), a = el.getBoundingClientRect();
+      const r = {
+        x: a.left - b.left + this.wrap.scrollLeft,
+        y: a.top - b.top + this.wrap.scrollTop,
+        w: a.width, h: a.height,
+      };
+      const w = st.base.w * v.lean, h = st.base.h * v.lean;
+      const cx = r.x + v.ax * r.w + v.gx;
+      const cy = r.y + v.ay * r.h + v.gy;
+      st.vantage = v;
+      st.aim = { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+      // a considered move, not a dart: inspection hops run slower than the
+      // ordinary slot-to-slot glide
+      this.glideTo({ x: cx - w / 2, y: cy - h / 2, w, h, r: st.base.r }, true, 1.35);
+      this.eyes.set(v.mood);
+      st.hopAt = now + 1500 + Math.random() * 1400;
+    }
+
+    /* Point the eyes at a spot in wrap coordinates. The divisor is a falloff:
+       small offsets still read as a definite look, large ones saturate rather
+       than pinning the pupils to the rim. */
+    aimAt(pt) {
+      if (!this.cur) return;
+      const dx = pt.x - (this.cur.x + this.cur.w / 2);
+      const dy = pt.y - (this.cur.y + this.cur.h / 2);
+      this.eyes.look(Math.max(-1, Math.min(1, dx / 70)), Math.max(-1, Math.min(1, dy / 48)));
     }
 
     /* Something questionable came in: eyes go huge — an "ayo?" double-take — hold
@@ -203,6 +335,8 @@
           if (p > 0.05 && p < 0.09) this.eyes.set('confused');
         } else {
           this.judgeScale = 1; this.judgeShakeX = 0; this.judgeRot = 0;
+      this.hoverLift = 0; this.hoverTilt = 0;
+      this._inspect = null;
           this.apply();
           this._judging = false; this.busy = false;
           this.set('neutral');

@@ -331,7 +331,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
   }
 
   /* ---------- account menu ---------- */
-  const VERSION = '0.5.0';
+  const VERSION = '0.6.0';
   function setupMeMenu() {
     const btn = $('#me'), menu = $('#me-menu');
     $('#me-version').textContent = `jio v${VERSION}`;
@@ -445,6 +445,9 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     bubble.classList.remove('raw', 'cursor');
     bubble.innerHTML = '<div class="thinking"><span class="thinking-text"></span></div>';
     const el = bubble.querySelector('.thinking-text');
+    // thought particles come off the eyes themselves, not this row — the
+    // mascot owns them so they follow it around (js/thinkfx.js)
+    if (mascot) mascot.think(true);
     let i = 0;
     const show = () => {
       el.textContent = THINKING_PHRASES[i % THINKING_PHRASES.length];
@@ -458,6 +461,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
   }
   function stopThinking(bubble) {
     if (bubble._thinkTimer) { clearInterval(bubble._thinkTimer); bubble._thinkTimer = null; }
+    if (mascot) mascot.think(false);
   }
   /* Local-only: a genuine one-line plan from the model itself, streamed live
      into the same shimmering status header the canned phrases use. Purely
@@ -498,6 +502,53 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     bubble._raw = text;
   }
 
+  /* ---------- collapsing code while it streams ----------
+     A fenced block is recognised the moment its opening fence arrives, and
+     from then on the code itself never reaches the bubble. It used to: every
+     delta appended another animated <span class="tok">, so a 400-line file
+     meant thousands of live spans plus a full re-scan of the whole string for
+     an <html> block and a scroll-to-bottom on every token. That's what made
+     generating code crawl. Now the prose before the fence renders once and
+     the code becomes a single counter that updates one text node per token,
+     which is flat regardless of file size. The canvas still receives the real
+     code on its own throttle. */
+  function codeSplit(text) {
+    const i = text.indexOf('```');
+    if (i === -1) return null;
+    const body = text.slice(i).replace(/^```[a-zA-Z0-9+#-]*\r?\n?/, '');
+    const end = body.indexOf('```');
+    return {
+      prose: text.slice(0, i).trim(),
+      code: end === -1 ? body : body.slice(0, end),
+      closed: end !== -1,
+    };
+  }
+
+  /* Renders prose-then-counter. Called on every token, so past the first call
+     it only touches the one text node that changes. */
+  function streamCollapsedCode(bubble, split) {
+    let live = bubble._codeLive;
+    if (!live) {
+      stopThinking(bubble);
+      bubble.classList.remove('raw', 'cursor');
+      bubble.innerHTML = '';
+      if (split.prose) {
+        const p = document.createElement('div');
+        p.className = 'code-prose';
+        p.innerHTML = render(split.prose);
+        bubble.appendChild(p);
+      }
+      live = document.createElement('div');
+      live.className = 'code-live';
+      live.innerHTML = '<span class="code-live-dot"></span><b>writing code</b><span class="code-live-n"></span>';
+      bubble.appendChild(live);
+      bubble._codeLive = live;
+      bubble._codeN = live.querySelector('.code-live-n');
+    }
+    const lines = split.code.length ? split.code.split('\n').length : 0;
+    bubble._codeN.textContent = `${lines} line${lines === 1 ? '' : 's'}`;
+  }
+
   function setBubble(bubble, text, streaming, canvasSnapshot) {
     if (streaming) {
       if (!text) { startThinking(bubble); return; }
@@ -510,6 +561,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     stopThinking(bubble);
     bubble.classList.remove('cursor', 'raw');
     bubble._raw = '';
+    bubble._codeLive = null; bubble._codeN = null;
     bubble.innerHTML = render(stripHtmlBlock(text));
     renderMath(bubble);
     const chip = bubble.querySelector('[data-open]');
@@ -622,7 +674,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     $('#greeting').hidden = true;
     $('#view-chat').classList.remove('empty');
     current.messages.push({ role: 'user', content: text });
-    appendMsg('user', text);
+    const userNode = appendMsg('user', text);
     scrollBottom(true);
     if (isQuestionable(text)) mascot.judge();
 
@@ -658,7 +710,14 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     ];
     abort = new AbortController();
     $('#send').classList.add('stop');
-    let full = '', lastCanvas = 0, mood = null, route = '';
+    let full = '', lastCanvas = 0, mood = null, route = '', started = false;
+    /* If the reply takes a while to start, jio stops waiting politely in its
+       slot and goes and looks at the message it was asked about — round the
+       sides, underneath, over the top (see Mascot.inspect). Only for a real
+       wait: under a couple of seconds it would just read as twitchiness. */
+    const inspectAt = setTimeout(() => {
+      if (!started && !abort?.signal.aborted) mascot.inspect(userNode.querySelector('.bubble'));
+    }, 2400);
     try {
       // The local model is fast and free to call twice — a real one-line plan,
       // streamed live into the thinking indicator, reads as it actually
@@ -671,13 +730,24 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
         temperature: editMode ? 0.2 : 0.7,
         onRoute: (r) => { route = r; },
         onToken: (_, sofar) => {
+          // the first token means it is no longer thinking: stop the field,
+          // call off the inspection and put the mascot back in its slot
+          if (!started) { started = true; clearTimeout(inspectAt); mascot.stopInspect(); }
           if (!mood) { const m = moodIn(sofar); if (m) { mood = m; mascot.set(m); } }
           // an edit-mode reply is diff markup, not prose — nothing worth
           // streaming live; the thinking indicator stays up until it's ready
           if (editMode) return;
           const shown = stripMood(sofar).replace(PARTIAL, '');
-          setBubble(bubble, shown, true);
-          scrollBottom();
+          const split = codeSplit(shown);
+          if (split) {
+            streamCollapsedCode(bubble, split);
+            // the code is collapsed, so nothing here grows the thread — no
+            // need to chase the bottom on every token any more
+            if (!bubble._codeScrolled) { scrollBottom(); bubble._codeScrolled = true; }
+          } else {
+            setBubble(bubble, shown, true);
+            scrollBottom();
+          }
           if (canvasMode && Date.now() - lastCanvas > 400) { const h = extractHtml(shown); if (h) { openCanvas(h, true); lastCanvas = Date.now(); } }
         },
       });
@@ -719,6 +789,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
         mascot.done(false);
       }
     } finally {
+      clearTimeout(inspectAt); mascot.stopInspect();
       abort = null; $('#send').classList.remove('stop');
       current.messages.push({ role: 'assistant', content: full });
       if (current.id) {

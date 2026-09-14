@@ -521,6 +521,14 @@ canvas { display: block; }
 @media (max-width: 900px) {
   .app, .app.canvas-open, .app.collapsed.canvas-open, .app.research-open, .app.collapsed.research-open { grid-template-columns: 0 1fr 0; }
 
+  /* On a phone, vertically centering the empty-chat greeting+composer as a
+     group (the desktop treatment, mirroring Claude's own new-chat screen)
+     leaves a slab of dead space below the composer down to the browser's own
+     chrome — reads as something scrollable even though the page itself
+     isn't. Anchoring both to the bottom instead is the conventional mobile
+     chat layout and keeps the input exactly where a thumb expects it. */
+  .view-chat.empty { justify-content: flex-end; padding-bottom: max(20px, env(safe-area-inset-bottom)); }
+
   /* Both panels are always in the layout here (position: fixed, full height)
      so a real `transform` transition has something to slide — a grid track
      that's permanently 0-width on mobile can't animate a slide on its own. */

@@ -6,7 +6,7 @@
 // through this same server at /local/* (proxied through to llama-server's own
 // port — see proxyToLlama below) so the renderer never makes a cross-origin
 // request. No network required once the model is downloaded.
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -82,8 +82,16 @@ function proxyToLlama(req, res) {
   upstream.on('error', () => { res.writeHead(502); res.end('local model is not running'); });
   req.pipe(upstream);
 }
-function startStaticServer() {
-  return new Promise((resolve) => {
+/* Binds the first free port at or above STATIC_PORT.
+   A hardcoded port is a single point of failure for *starting the app at
+   all*: anything else already holding it (a stale jio that outlived its
+   window, another program, a lingering socket in TIME_WAIT) made listen()
+   emit EADDRINUSE. With no 'error' listener that became an uncaught
+   exception in the main process — the app showed a JS error dialog and
+   died, with no way back in short of ending the task by hand. So: never
+   let a busy port be fatal, and never leave listen() unhandled. */
+function startStaticServer(port = STATIC_PORT, attempt = 0) {
+  return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {
       if (req.url === '/local' || req.url.startsWith('/local/')) return proxyToLlama(req, res);
       const reqPath = decodeURIComponent((req.url || '/').split('?')[0]);
@@ -97,7 +105,15 @@ function startStaticServer() {
         res.end(data);
       });
     });
-    server.listen(STATIC_PORT, '127.0.0.1', () => resolve(server));
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE' && attempt < 20) {
+        server.close();
+        resolve(startStaticServer(port + 1, attempt + 1));
+      } else {
+        reject(err);
+      }
+    });
+    server.listen(port, '127.0.0.1', () => resolve({ server, port }));
   });
 }
 
@@ -217,8 +233,25 @@ ipcMain.handle('jio:browser-scroll', (_e, dir) => Browser.scroll(dir));
 ipcMain.handle('jio:browser-back', () => Browser.back());
 
 /* ---------- app lifecycle ---------- */
+/* One jio at a time. Without this, launching it again while a copy is
+   already running meant a second process racing for the same port and
+   dying on it. Now the second launch hands focus to the window that's
+   already open — which is what clicking the icon again should do anyway. */
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
+  start();
+}
+
+function start() {
 app.whenReady().then(async () => {
-  await startStaticServer();
+  const { port } = await startStaticServer();
   mainWindow = new BrowserWindow({
     width: 1280, height: 860, minWidth: 760, minHeight: 560,
     // matches --bg-side, so the very first paint (before the page loads) is
@@ -239,11 +272,19 @@ app.whenReady().then(async () => {
       sandbox: true,
     },
   });
-  mainWindow.loadURL(`http://127.0.0.1:${STATIC_PORT}/`);
+  mainWindow.loadURL(`http://127.0.0.1:${port}/`);
   startLocalModel();
 
   if (!isDev) checkForUpdates(false);
+}).catch((err) => {
+  // Anything that goes wrong before the window exists would otherwise
+  // surface as Electron's raw "A JavaScript error occurred in the main
+  // process" box and take the app down. Say what happened in plain words
+  // instead, then exit deliberately.
+  dialog.showErrorBox('jio could not start', `${err && err.message ? err.message : err}\n\nIf this keeps happening, close any running copy of jio and try again.`);
+  app.quit();
 });
+}
 
 app.on('window-all-closed', () => {
   if (llamaProc) llamaProc.kill();

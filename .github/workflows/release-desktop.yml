@@ -1,18 +1,48 @@
 name: Release desktop app
 
 # Builds the Windows installer and publishes it to this repo's GitHub Releases,
-# which is also where electron-updater looks for updates — pushing a tag here
-# is the entire "ship a new version" step.
+# which is also where electron-updater looks for updates. Fully automatic:
+# bumping desktop/package.json's version and pushing to main is the entire
+# "ship a new version" step — no manual dispatch required (that still works
+# too, for a forced re-run of the current version).
 on:
   push:
-    tags: ["desktop-v*"]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  # Every push to main lands here, most of which aren't a version bump — so
+  # only actually build when the current version isn't already out as a
+  # release (a manual dispatch always builds, unconditionally).
+  check:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(node -p "require('./desktop/package.json').version")
+          tag="v$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "release $tag already exists — skipping"
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "no release for $tag yet — building"
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build-windows:
+    needs: [check]
+    if: always() && needs.check.result != 'failure' && (github.ref != 'refs/heads/main' || needs.check.outputs.should_build == 'true')
     runs-on: windows-latest
     defaults:
       run:

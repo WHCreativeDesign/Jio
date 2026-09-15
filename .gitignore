@@ -5,4 +5,5 @@ node_modules/
 desktop/web/
 desktop/dist/
 desktop/resources/llama/
+desktop/build/
 desktop/*.zip

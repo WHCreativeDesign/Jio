@@ -91,9 +91,14 @@ const Browser = {
       blink the first time forces a fresh paint in case it already latched
       onto a blank frame from a stray earlier setVisible. */
   setBounds(rect) {
-    if (!view) return;
-    const b = { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) };
-    if (b.width < 1 || b.height < 1) return;
+    if (!view || !rect) return;
+    // Number.isFinite, not just a size test: a rect that lost its fields on
+    // the way over arrives as undefined-everything, and NaN fails every
+    // comparison silently — `NaN < 1` is false, so a plain size check would
+    // wave it straight through into setBounds and blank the view.
+    const n = (v) => (Number.isFinite(v) ? Math.round(v) : null);
+    const b = { x: n(rect.x), y: n(rect.y), width: n(rect.width), height: n(rect.height) };
+    if (b.x === null || b.y === null || !b.width || !b.height) return;
     view.setBounds(b);
     if (!painted) { view.setVisible(false); view.setVisible(true); painted = true; }
     else view.setVisible(true);

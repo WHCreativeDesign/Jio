@@ -331,7 +331,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
   }
 
   /* ---------- account menu ---------- */
-  const VERSION = '0.8.1';
+  const VERSION = '0.8.2';
   function setupMeMenu() {
     const btn = $('#me'), menu = $('#me-menu');
     $('#me-version').textContent = `jio v${VERSION}`;
@@ -884,6 +884,7 @@ Rules:
     let full = 'research stopped before reaching an answer.';
     let route = '';
     let searchStreak = 0;
+    let repeatStreak = 0, lastSig = '';
     try {
       // duckduckgo's html endpoint again, not google — same consent-wall/heavy-JS
       // reason as SEARCH_URL above, and it means the very first thing the model
@@ -915,6 +916,14 @@ Rules:
         const isSearch = action.name === 'navigate' && /[?&]q=/.test(action.args[0] || '');
         searchStreak = isSearch ? searchStreak + 1 : 0;
 
+        // The same guard, generalised: a model can get just as stuck repeating
+        // any one action — most often scroll() on an endless JS feed, where
+        // each scroll looks like progress but the readable text never really
+        // changes. Count identical consecutive actions and say so.
+        const sig = `${action.name}(${(action.args || []).join(',')})`;
+        repeatStreak = sig === lastSig ? repeatStreak + 1 : 0;
+        lastSig = sig;
+
         let obs, desc;
         try {
           switch (action.name) {
@@ -936,6 +945,9 @@ Rules:
           : 'OBSERVATION: that action failed and the page could not be re-read.';
         if (searchStreak >= 2) {
           obsText = `IMPORTANT: that's ${searchStreak} searches in a row with no click in between. Do not search again — click(N) on one of the results below, or call done() if you already have enough.\n\n${obsText}`;
+        }
+        if (repeatStreak >= 2) {
+          obsText = `IMPORTANT: you have now run ${repeatStreak + 1} identical actions in a row (${sig}) and the page is not getting you anywhere new. Stop repeating it — do something different: click(N) on one of the elements below, navigate() somewhere else, or call done() with what you already have. Some pages (endless video/social feeds especially) render almost nothing a text reading can use, so more of the same will not help.\n\n${obsText}`;
         }
         if (vision) {
           const shot = await window.jioDesktop.browser.screenshot().catch(() => null);

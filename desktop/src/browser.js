@@ -21,6 +21,7 @@ const { WebContentsView } = require('electron');
 
 let view = null;
 let host = null; // the BrowserWindow it's currently attached to
+let painted = false; // has it ever been shown with real (non-zero) bounds?
 
 const MARK_AND_READ = `(() => {
   const isVisible = (el) => {
@@ -65,9 +66,9 @@ function waitLoaded(wc) {
 const Browser = {
   isOpen: () => !!view,
 
-  /** Embed the view in `win`'s own content area — called once the research
-      panel first opens. Idempotent: re-attaching to the same window is a
-      no-op, since the panel toggling on/off just calls setVisible below. */
+  /** Embed the view in `win`'s own content area — called every time the
+      research panel opens. Idempotent: re-attaching to the same window is a
+      no-op. Deliberately does NOT show the view — see setBounds for why. */
   attach(win) {
     ensure();
     if (host !== win) {
@@ -75,14 +76,28 @@ const Browser = {
       win.contentView.addChildView(view);
       host = win;
     }
-    view.setVisible(true);
   },
   hide() { if (view) view.setVisible(false); },
   detach() { if (view && host) { host.contentView.removeChildView(view); host = null; } },
 
   /** x/y/width/height in the host window's content coordinates — exactly what
-      a renderer-side getBoundingClientRect() on the panel placeholder gives. */
-  setBounds(rect) { if (view) view.setBounds({ x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }); },
+      a renderer-side getBoundingClientRect() on the panel placeholder gives.
+      This is also what actually shows the view (attach() deliberately
+      doesn't): a WebContentsView made visible while it still has its
+      starting 0x0 bounds — the very first time the panel opens, before the
+      renderer's ResizeObserver has reported real geometry — can get stuck
+      compositing nothing on Windows even after it's resized. Only turning
+      it on once real bounds are known avoids that; the extra hide/show
+      blink the first time forces a fresh paint in case it already latched
+      onto a blank frame from a stray earlier setVisible. */
+  setBounds(rect) {
+    if (!view) return;
+    const b = { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) };
+    if (b.width < 1 || b.height < 1) return;
+    view.setBounds(b);
+    if (!painted) { view.setVisible(false); view.setVisible(true); painted = true; }
+    else view.setVisible(true);
+  },
 
   async open() { ensure(); if (!view.webContents.getURL()) await Browser.navigate('https://www.google.com'); return true; },
 

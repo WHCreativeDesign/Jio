@@ -32,10 +32,17 @@ contextBridge.exposeInMainWorld('jioDesktop', {
   browser: {
     open: () => ipcRenderer.invoke('jio:browser-open'),
     hide: () => ipcRenderer.invoke('jio:browser-hide'),
-    // rect: a DOMRect-shaped {x,y,width,height} from the panel placeholder's
-    // own getBoundingClientRect() — same coordinate space as the window's
-    // content area, so it can go straight to WebContentsView.setBounds()
-    setBounds: (rect) => ipcRenderer.invoke('jio:browser-set-bounds', rect),
+    // rect: the panel placeholder's own getBoundingClientRect() — same
+    // coordinate space as the window's content area, so it can go straight
+    // to WebContentsView.setBounds().
+    //
+    // Copied field by field on purpose: a DOMRect is a DOM object, and those
+    // cross Electron's IPC as an EMPTY object — no error, no warning, just
+    // {} on the other side, which then rounds to NaN bounds and leaves the
+    // view invisible forever. Only plain own properties survive the trip.
+    setBounds: (rect) => ipcRenderer.invoke('jio:browser-set-bounds', {
+      x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+    }),
     navigate: (url) => ipcRenderer.invoke('jio:browser-navigate', url),
     read: () => ipcRenderer.invoke('jio:browser-read'),
     screenshot: () => ipcRenderer.invoke('jio:browser-screenshot'), // -> base64 PNG

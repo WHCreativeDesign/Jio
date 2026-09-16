@@ -176,17 +176,19 @@ jobs:
           import json, sys
           arch = sys.argv[1].lower()
           alts = {'x64': ['x64', 'x86_64', 'amd64'], 'arm64': ['arm64', 'aarch64']}[arch]
+          # .tar.gz as well as .zip: llama.cpp ships Windows as zips but macOS
+          # (and Linux) as tarballs, which is what this step first tripped on.
           for rel in json.load(open('releases.json')):
               for a in rel.get('assets', []):
                   n = a['name'].lower()
-                  if 'macos' in n and n.endswith('.zip') and any(t in n for t in alts):
+                  if 'macos' in n and n.endswith(('.zip', '.tar.gz')) and any(t in n for t in alts):
                       print(a['browser_download_url'])
                       sys.exit(0)
           PY
           ) || true
 
           if [ -z "$asset" ]; then
-            echo "no release in the newest 50 had a macOS $ARCH zip. What was there:"
+            echo "no release in the newest 50 had a macOS $ARCH build. What was there:"
             python3 -c "
           import json
           for rel in json.load(open('releases.json'))[:10]:
@@ -198,9 +200,13 @@ jobs:
           fi
 
           echo "downloading $asset"
-          mkdir -p resources/llama
-          curl -sSL "$asset" -o llama-mac.zip
-          unzip -q -o llama-mac.zip -d llama-unpacked
+          mkdir -p resources/llama llama-unpacked
+          case "$asset" in
+            *.tar.gz) curl -sSL "$asset" -o llama-mac.tar.gz
+                      tar -xzf llama-mac.tar.gz -C llama-unpacked ;;
+            *)        curl -sSL "$asset" -o llama-mac.zip
+                      unzip -q -o llama-mac.zip -d llama-unpacked ;;
+          esac
 
       # The zips have shipped both flat and nested (build/bin/...) depending on
       # version, and main.js expects llama-server directly in resources/llama.

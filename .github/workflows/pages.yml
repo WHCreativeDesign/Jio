@@ -25,8 +25,24 @@ jobs:
       - uses: actions/configure-pages@v5
         with:
           enablement: true
+
+      # Stage exactly what the site serves, rather than uploading the whole
+      # repo. `path: .` published everything that happened to be checked in —
+      # desktop/, supabase/, .github/, .claude/ — to a public URL. None of it
+      # was secret (checked), but none of it belongs on the site either, and
+      # it grew the artifact every time something unrelated was added.
+      - name: Stage the site
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          cp -R index.html lab.html css js _site/
+          # CNAME is what points the site at jio.usecloak.org; .nojekyll stops
+          # Pages running the files through Jekyll
+          for f in CNAME .nojekyll; do [ -e "$f" ] && cp "$f" _site/; done
+          echo "staged:"; find _site -maxdepth 1 -mindepth 1 | sort
+
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4

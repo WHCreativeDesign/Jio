@@ -10,6 +10,10 @@ contextBridge.exposeInMainWorld('jioDesktop', {
   // cross-origin request (and never has to trust llama-server's own CORS
   // headers, which vary by version and flags).
   localBaseUrl: '/local',
+  // which OS the shell is on — the page needs it because the window controls
+  // sit on opposite sides (right on Windows, left on macOS) and it has to
+  // keep its own header out from under them
+  platform: process.platform,
   status: () => ipcRenderer.invoke('jio:local-status'),
   retry: () => ipcRenderer.invoke('jio:local-retry'),
   onStatus: (cb) => {
@@ -21,6 +25,7 @@ contextBridge.exposeInMainWorld('jioDesktop', {
   appVersion: () => ipcRenderer.invoke('jio:app-version'),
   checkForUpdates: () => ipcRenderer.invoke('jio:check-for-updates'),
   quitAndInstall: () => ipcRenderer.invoke('jio:quit-and-install'),
+  openReleases: () => ipcRenderer.invoke('jio:open-releases'),
   onUpdateStatus: (cb) => {
     const handler = (_e, status) => cb(status);
     ipcRenderer.on('jio:update-status', handler);

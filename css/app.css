@@ -795,6 +795,17 @@ canvas { display: block; }
 }
 .is-desktop .canvas-head button, .is-desktop .research-head button { -webkit-app-region: no-drag; }
 
+/* macOS puts its three lights top-LEFT instead, so the gutter moves with
+   them: the right-hand reservation comes back off, and whatever actually
+   reaches the top-left corner takes it instead — the sidebar header normally,
+   the topbar once the sidebar is collapsed out of the way. */
+.is-desktop.is-mac {
+  --caption-controls-w: 0px;
+  --mac-lights-w: 78px;
+}
+.is-desktop.is-mac .side-head { padding-left: calc(12px + var(--mac-lights-w)); }
+.is-desktop.is-mac .app.collapsed .topbar { padding-left: calc(10px + var(--mac-lights-w)); }
+
 /* ---------- research mode ---------- */
 /* A running transcript of what the browser did, replacing the thinking
    indicator while jio drives it; the final answer settles in below once

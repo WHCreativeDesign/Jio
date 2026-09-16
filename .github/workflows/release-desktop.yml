@@ -134,3 +134,100 @@ jobs:
         run: npm run release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # macOS. Runs after the Windows job rather than beside it so the two aren't
+  # racing to create the same GitHub release, and one arch at a time for the
+  # same reason. Each arch gets its OWN llama.cpp build — the binaries are
+  # native, and extraResources copies one resources/llama into whatever is
+  # being packaged, so arm64 and x64 can't share a checkout.
+  build-mac:
+    needs: [check, build-windows]
+    if: always() && needs.build-windows.result == 'success'
+    runs-on: macos-latest
+    strategy:
+      max-parallel: 1
+      matrix:
+        arch: [arm64, x64]
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Same shape as the Windows fetch above, and for the same reason: match
+      # on what the filename CONTAINS (macos + this arch) rather than an
+      # ordered regex, since llama.cpp's exact naming has shifted before. The
+      # Windows binaries ship on prereleases, so walk the list newest-first
+      # and take the first release that actually carries what we need.
+      - name: Fetch llama.cpp (macOS, ${{ matrix.arch }})
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          curl -sS -H "Authorization: Bearer $GH_TOKEN" -H "User-Agent: jio-build" \
+            "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=50" -o releases.json
+
+          asset=$(python3 - "$ARCH" <<'PY'
+          import json, sys
+          arch = sys.argv[1].lower()
+          alts = {'x64': ['x64', 'x86_64', 'amd64'], 'arm64': ['arm64', 'aarch64']}[arch]
+          for rel in json.load(open('releases.json')):
+              for a in rel.get('assets', []):
+                  n = a['name'].lower()
+                  if 'macos' in n and n.endswith('.zip') and any(t in n for t in alts):
+                      print(a['browser_download_url'])
+                      sys.exit(0)
+          PY
+          ) || true
+
+          if [ -z "$asset" ]; then
+            echo "no release in the newest 50 had a macOS $ARCH zip. What was there:"
+            python3 -c "
+          import json
+          for rel in json.load(open('releases.json'))[:10]:
+              print(' ', rel['tag_name'])
+              for a in rel.get('assets', []): print('     ', a['name'])
+          "
+            echo "adjust the matcher in this step to suit"
+            exit 1
+          fi
+
+          echo "downloading $asset"
+          mkdir -p resources/llama
+          curl -sSL "$asset" -o llama-mac.zip
+          unzip -q -o llama-mac.zip -d llama-unpacked
+
+      # The zips have shipped both flat and nested (build/bin/...) depending on
+      # version, and main.js expects llama-server directly in resources/llama.
+      - name: Put llama-server in place
+        run: |
+          set -euo pipefail
+          exe=$(find llama-unpacked -type f -name 'llama-server' | head -n1)
+          if [ -z "$exe" ]; then
+            echo "llama-server not found anywhere in the archive:"
+            find llama-unpacked -type f | head -50
+            exit 1
+          fi
+          # take the whole directory it lives in — the server needs the dylibs
+          # that ship beside it, not just the one executable
+          cp -R "$(dirname "$exe")"/* resources/llama/
+          chmod +x resources/llama/llama-server
+          echo "ok — llama-server in place, alongside:"
+          ls resources/llama
+
+      - run: npm ci
+
+      # Unsigned: shipping a signed/notarized mac build needs a paid Apple
+      # Developer account and its certificate in CI secrets, neither of which
+      # exists here. CSC_IDENTITY_AUTO_DISCOVERY=false stops electron-builder
+      # from hunting the keychain for one and failing the build over it.
+      - name: Build and publish
+        run: npm run release -- --mac --${{ matrix.arch }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false

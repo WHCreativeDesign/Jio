@@ -7,6 +7,7 @@
 // taskbar icon actually look like the app rather than Electron's default.
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 
 const OUT = path.join(__dirname, '..', 'build');
 fs.mkdirSync(OUT, { recursive: true });
@@ -172,9 +173,86 @@ function writeICO(sizes) {
   return Buffer.concat([dir, ...images]);
 }
 
+/* ---- PNG writer (for the .icns chunks, which are PNG-encoded) ----
+   Hand-rolled rather than pulled from npm: this script's whole point is that
+   the build needs no image tooling, and Node already ships the only hard part
+   (zlib). PNG is signature + IHDR + IDAT + IEND, each chunk length-prefixed
+   and CRC32-suffixed. */
+const CRC_TABLE = (() => {
+  const t = new Int32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c;
+  }
+  return t;
+})();
+function crc32(buf) {
+  let c = -1;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ -1) >>> 0;
+}
+function chunk(type, data) {
+  const out = Buffer.alloc(8 + data.length + 4);
+  out.writeUInt32BE(data.length, 0);
+  out.write(type, 4, 'ascii');
+  data.copy(out, 8);
+  out.writeUInt32BE(crc32(Buffer.concat([Buffer.from(type, 'ascii'), data])), 8 + data.length);
+  return out;
+}
+function writePNG(size, rgba) {
+  // each scanline is prefixed with its filter byte (0 = none)
+  const raw = Buffer.alloc(size * (size * 4 + 1));
+  let p = 0;
+  for (let y = 0; y < size; y++) {
+    raw[p++] = 0;
+    rgba.copy(raw, p, y * size * 4, (y + 1) * size * 4);
+    p += size * 4;
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(size, 0);
+  ihdr.writeUInt32BE(size, 4);
+  ihdr[8] = 8;    // bit depth
+  ihdr[9] = 6;    // color type: RGBA
+  ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0; // deflate, adaptive filter, no interlace
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+/* ---- ICNS writer ----
+   'icns' + total length, then one length-prefixed chunk per size, each tagged
+   with the OSType macOS uses for that dimension. Modern macOS reads PNG
+   payloads directly for these types, so each chunk is just the PNG above. */
+const ICNS_TYPES = [
+  ['icp4', 16], ['icp5', 32], ['ic07', 128],
+  ['ic08', 256], ['ic09', 512], ['ic10', 1024],
+];
+function writeICNS() {
+  const chunks = ICNS_TYPES.map(([type, size]) => {
+    const png = writePNG(size, drawFace(size, size));
+    const head = Buffer.alloc(8);
+    head.write(type, 0, 'ascii');
+    head.writeUInt32BE(8 + png.length, 4);
+    return Buffer.concat([head, png]);
+  });
+  const body = Buffer.concat(chunks);
+  const head = Buffer.alloc(8);
+  head.write('icns', 0, 'ascii');
+  head.writeUInt32BE(8 + body.length, 4);
+  return Buffer.concat([head, body]);
+}
+
 // App icon: the panel + eyes, at every size Windows actually asks for.
 const iconSizes = [16, 24, 32, 48, 64, 128, 256].map((size) => ({ size, rgba: drawFace(size, size) }));
 fs.writeFileSync(path.join(OUT, 'icon.ico'), writeICO(iconSizes));
+
+// The same mark for macOS, where the icon is the app's whole identity in the
+// Dock and Finder — so it goes all the way up to 1024.
+fs.writeFileSync(path.join(OUT, 'icon.icns'), writeICNS());
 
 // Installer banners: edge-to-edge (no rounded panel), NSIS's required sizes.
 fs.writeFileSync(path.join(OUT, 'installerSidebar.bmp'), writeBMP(164, 314, drawFace(164, 314, { panel: false })));

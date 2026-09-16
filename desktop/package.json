@@ -1,8 +1,9 @@
 {
   "name": "jio-desktop",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "private": true,
-  "description": "jio, packaged as a Windows desktop app with an offline local model.",
+  "description": "jio, packaged as a desktop app with an offline local model.",
+  "author": "WHCreativeDesign",
   "main": "src/main.js",
   "scripts": {
     "copy-web": "node scripts/copy-web.js",
@@ -34,6 +35,29 @@
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],
       "icon": "build/icon.ico"
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
+      ],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.productivity",
+      "darkModeSupport": true,
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "title": "jio ${version}",
+      "backgroundColor": "#1f1e1d",
+      "window": { "width": 540, "height": 380 },
+      "contents": [
+        { "x": 150, "y": 200, "type": "file" },
+        { "x": 390, "y": 200, "type": "link", "path": "/Applications" }
+      ]
     },
     "nsis": {
       "oneClick": false,

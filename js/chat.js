@@ -265,6 +265,9 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
   function markDesktopChrome() {
     if (!window.jioDesktop) return;
     document.documentElement.classList.add('is-desktop');
+    // the window controls are top-right on Windows but top-left on macOS, so
+    // the page has to reserve its gutter on the matching side (css/app.css)
+    if (window.jioDesktop.platform === 'darwin') document.documentElement.classList.add('is-mac');
     // research mode drives a real OS browser window electron opens — nothing
     // to open on the GitHub Pages build, so the button stays hidden there
     const btn = $('#research-btn'); if (btn) btn.hidden = false;
@@ -331,7 +334,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
   }
 
   /* ---------- account menu ---------- */
-  const VERSION = '0.8.4';
+  const VERSION = '0.8.5';
   function setupMeMenu() {
     const btn = $('#me'), menu = $('#me-menu');
     $('#me-version').textContent = `jio v${VERSION}`;
@@ -357,6 +360,10 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
         case 'downloading': label.textContent = `Downloading… ${status.detail}%`; btn.disabled = true; break;
         case 'downloaded': label.textContent = `Restart to update (v${status.detail})`; btn.disabled = false; btn.dataset.downloaded = '1'; break;
         case 'not-available': label.textContent = "You're up to date"; btn.disabled = false; setTimeout(reset, 2500); break;
+        // macOS ships unsigned, so it can't self-update (see checkForUpdates
+        // in desktop/src/main.js) — the button becomes a link to the downloads
+        // page rather than a check that would always fail
+        case 'manual': label.textContent = 'Get the latest build'; btn.disabled = false; btn.dataset.manual = '1'; break;
         case 'error': label.textContent = 'Update check failed'; btn.disabled = false; setTimeout(reset, 2500); break;
         default: reset();
       }
@@ -366,6 +373,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     btn.addEventListener('click', () => {
       if (btn.disabled) return;
       if (btn.dataset.downloaded) { window.jioDesktop.quitAndInstall?.(); return; }
+      if (btn.dataset.manual) { window.jioDesktop.openReleases?.(); return; }
       window.jioDesktop.checkForUpdates();
     });
   }

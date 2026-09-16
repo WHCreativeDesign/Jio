@@ -57,8 +57,18 @@ autoUpdater.on('error', (e) => setUpdateStatus('error', e.message));
 // `notify` true when the user pressed the button (a "you're up to date"
 // toast makes sense); false for the silent launch-time check, which should
 // stay invisible unless there's actually something to do.
+/* The macOS builds are unsigned — shipping a signed, notarized one needs a
+   paid Apple Developer certificate, which this project doesn't have. Squirrel
+   (what electron-updater drives on macOS) refuses to apply an update whose
+   signature it can't verify, so an auto-update attempt there doesn't just
+   fail, it fails confusingly. Better to never pretend: report a distinct
+   'manual' state that the UI turns into a link to the downloads page. */
+const CAN_AUTO_UPDATE = process.platform !== 'darwin';
+const RELEASES_URL = 'https://github.com/WHCreativeDesign/Jio/releases/latest';
+
 function checkForUpdates(notify) {
   if (isDev) { setUpdateStatus(notify ? 'not-available' : 'idle'); return; }
+  if (!CAN_AUTO_UPDATE) { setUpdateStatus(notify ? 'manual' : 'idle'); return; }
   return autoUpdater.checkForUpdates().catch((e) => setUpdateStatus('error', e.message));
 }
 
@@ -215,6 +225,7 @@ ipcMain.handle('jio:open-external', (_e, url) => shell.openExternal(url));
 ipcMain.handle('jio:app-version', () => app.getVersion());
 ipcMain.handle('jio:check-for-updates', () => checkForUpdates(true));
 ipcMain.handle('jio:quit-and-install', () => autoUpdater.quitAndInstall());
+ipcMain.handle('jio:open-releases', () => shell.openExternal(RELEASES_URL));
 
 /* ---------- research browser (real, visible, jio-driven Chromium) ---------- */
 // open()/hide() attach or hide the embedded view; setBounds keeps it glued to
@@ -249,22 +260,41 @@ if (!app.requestSingleInstanceLock()) {
   start();
 }
 
-function start() {
-app.whenReady().then(async () => {
-  const { port } = await startStaticServer();
+/* The two platforms hide their title bar in genuinely different ways, so this
+   is a real branch rather than one config with a flag:
+
+   Windows draws its caption bar in the *system* theme, which for most people
+   is light — a white strip above a dark app. Hiding it and painting our own
+   overlay in jio's sidebar color keeps the window one piece; the native
+   minimise/maximise/close buttons still render, just tinted, top-RIGHT.
+
+   macOS has no equivalent repaint problem (the traffic lights already sit on
+   whatever you put behind them) and no titleBarOverlay — passing one is
+   simply ignored there. 'hiddenInset' keeps the lights but drops the bar,
+   and nudging them down centers them against jio's own header row. They live
+   top-LEFT, which is why the page reserves its gutter on the other side
+   there (see .is-mac in css/app.css). */
+function windowChrome() {
+  if (process.platform === 'darwin') {
+    return {
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 18, y: (CAPTION_H - 16) / 2 },
+    };
+  }
+  return {
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#1f1e1d', symbolColor: '#c2c0b6', height: CAPTION_H },
+  };
+}
+
+function createWindow(port) {
   mainWindow = new BrowserWindow({
     width: 1280, height: 860, minWidth: 760, minHeight: 560,
     // matches --bg-side, so the very first paint (before the page loads) is
     // already jio-colored rather than a white flash
     backgroundColor: '#1f1e1d',
     autoHideMenuBar: true,
-    // Windows draws its native caption bar in the *system* theme, which for
-    // most people is light — a white strip above a dark app. Hiding it and
-    // painting our own overlay in jio's sidebar color keeps the window one
-    // piece. The native minimise/maximise/close buttons still render, just
-    // tinted; CAPTION_H below is what the page reserves for them.
-    titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#1f1e1d', symbolColor: '#c2c0b6', height: CAPTION_H },
+    ...windowChrome(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -273,6 +303,21 @@ app.whenReady().then(async () => {
     },
   });
   mainWindow.loadURL(`http://127.0.0.1:${port}/`);
+  return mainWindow;
+}
+
+function start() {
+app.whenReady().then(async () => {
+  const { port } = await startStaticServer();
+  createWindow(port);
+
+  /* macOS keeps the app running with every window closed (see
+     window-all-closed below), so clicking the Dock icon has to be able to
+     bring one back — otherwise the app is alive but unreachable. */
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(port);
+  });
+
   startLocalModel();
 
   if (!isDev) checkForUpdates(false);

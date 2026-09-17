@@ -818,3 +818,89 @@ canvas { display: block; }
 .research-answer { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .research-answer > :first-child { margin-top: 0; }
 .research-answer > :last-child { margin-bottom: 0; }
+
+/* ---------- live mode ---------- */
+/* One conversation, one visible answer. The whole app sits behind this, so
+   there is nothing to read but what jio just said — no transcript, no
+   sidebar, no chrome. The eyes carry the continuity instead: they hold the
+   mood of the last reply, and they are the only thing on screen that persists
+   between turns. */
+.live {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; flex-direction: column; align-items: center;
+  background: var(--bg);
+  padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+  animation: live-enter var(--t-slow) var(--ease) both;
+}
+@keyframes live-enter { from { opacity: 0; transform: scale(1.02); } to { opacity: 1; transform: none; } }
+
+.live-exit {
+  position: absolute; top: max(14px, env(safe-area-inset-top)); right: 16px;
+  width: 36px; height: 36px; display: grid; place-items: center;
+  border-radius: 50%; color: var(--fg-3); background: none;
+  transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+.live-exit:hover { background: var(--bg-hover); color: var(--fg); }
+
+/* The stage centres as a group, so a longer answer pushes the eyes up the
+   screen rather than running off the bottom. */
+.live-stage {
+  flex: 1; min-height: 0; width: 100%; max-width: 680px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 26px;
+}
+.live-eyes {
+  width: min(360px, 62vw); height: auto; flex: none;
+  filter: drop-shadow(0 6px 28px rgba(0, 0, 0, 0.45));
+  transition: width var(--t-slow) var(--ease-pop);
+}
+/* once there's something to read, the eyes give it the room */
+.live.has-say .live-eyes { width: min(230px, 42vw); }
+
+/* Bottom-anchored: new lines arrive at the bottom and shove what's already
+   there upward, and anything that overruns the height fades out at the top
+   instead of being cut off. */
+.live-say {
+  width: 100%; max-height: 42vh; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  font-family: var(--serif); font-size: clamp(20px, 3.1vw, 30px); line-height: 1.45;
+  letter-spacing: -0.01em; color: var(--fg); text-align: center; text-wrap: pretty;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12%);
+  mask-image: linear-gradient(to bottom, transparent, #000 12%);
+}
+.live-say:empty { display: none; }
+/* The words live in here, not directly in .live-say — as direct children of a
+   flex column each one would become its own column item and the answer would
+   read as a vertical list of single words. Inside a normal block they flow as
+   prose, and .live-say's flex job is only to pin that block to the bottom. */
+.live-text { display: block; }
+
+/* Each word arrives out of focus and below where it belongs, then rises and
+   sharpens into place — the "push up" is this, plus the block growing
+   upward against its bottom edge. */
+.live-word { display: inline-block; white-space: pre-wrap; animation: live-word 0.52s var(--ease) both; }
+@keyframes live-word {
+  from { opacity: 0; filter: blur(9px); transform: translateY(15px); }
+  to   { opacity: 1; filter: blur(0);   transform: none; }
+}
+/* the outgoing answer leaves the same way it came, in reverse */
+.live-say.out { animation: live-say-out 0.32s var(--ease) both; }
+@keyframes live-say-out {
+  to { opacity: 0; filter: blur(7px); transform: translateY(-12px); }
+}
+
+.live-form { width: 100%; max-width: 620px; flex: none; }
+.live-input {
+  width: 100%; text-align: center; color: var(--fg);
+  background: var(--bg-elev); border: 1px solid var(--line); border-radius: 999px;
+  padding: 15px 24px; font: 16px/1.4 var(--sans);
+  transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease);
+}
+.live-input::placeholder { color: var(--fg-3); }
+.live-input:focus { outline: none; border-color: var(--line-2); background: var(--bg-hover); box-shadow: var(--edge), var(--shadow); }
+.live.busy .live-input { opacity: 0.55; }
+
+@media (prefers-reduced-motion: reduce) {
+  .live, .live-word, .live-say.out { animation: none; }
+  .live-eyes { transition: none; }
+}

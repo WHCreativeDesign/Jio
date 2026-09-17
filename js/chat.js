@@ -334,7 +334,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
   }
 
   /* ---------- account menu ---------- */
-  const VERSION = '0.8.6';
+  const VERSION = '0.8.7';
   function setupMeMenu() {
     const btn = $('#me'), menu = $('#me-menu');
     $('#me-version').textContent = `jio v${VERSION}`;
@@ -345,6 +345,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menu.hidden) { close(); btn.focus(); } });
     $('#signout').addEventListener('click', async () => { await Auth.signOut(); location.reload(); });
     setupUpdateButton();
+    setupLive();
   }
 
   /* Only exists inside the Electron shell — window.jioDesktop is undefined
@@ -631,6 +632,9 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
       ask(text);
     });
     document.querySelectorAll('.seg-btn').forEach(b => b.addEventListener('click', () => {
+      // Live isn't a composer mode like the others — it takes over the screen
+      // entirely — so it opens the stage and leaves the segment on Chat.
+      if (b.dataset.mode === 'live') { setLiveOpen(true); return; }
       canvasMode = b.dataset.mode === 'canvas';
       researchMode = b.dataset.mode === 'research';
       document.querySelectorAll('.seg-btn').forEach(x => x.classList.toggle('on', x === b));
@@ -674,14 +678,9 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     }
   }
 
-  async function ask(text) {
-    $('#greeting').hidden = true;
-    $('#view-chat').classList.remove('empty');
-    current.messages.push({ role: 'user', content: text });
-    const userNode = appendMsg('user', text);
-    scrollBottom(true);
-    if (isQuestionable(text)) mascot.judge();
-
+  /* Both ask() and liveAsk() need a chat row to exist before anything can be
+     persisted against it, and both carry on in memory if creating one fails. */
+  async function ensureChat(text) {
     if (!current.id) {
       const title = text.slice(0, 60);
       try {
@@ -692,6 +691,147 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
       } catch (e) { /* keep going in memory */ }
     }
     if (current.id) Data.addMessage(current.id, 'user', text).catch(() => {});
+  }
+
+  /* ---------- live mode ----------
+     A conversation rather than a transcript: jio, the thing it just said, and
+     somewhere to type. Everything is still remembered — the same
+     current.messages the normal view uses, persisted the same way, so leaving
+     live mode shows the whole exchange — it just isn't on screen here. Only
+     the latest answer is, and it's replaced each turn. */
+  const LIVE_SYSTEM = `This is a live, spoken-feeling conversation. Reply in plain conversational prose — no markdown, no headings, no bullet points, no code blocks, no emoji. Two or three sentences at most unless genuinely asked for more. Only the latest reply is on screen, so never refer to "above" or "earlier in this list", and do not number things across turns. You still remember the whole conversation; talk like someone who does.`;
+
+  let liveEyes = null, liveWords = 0, liveOpen = false;
+
+  function setLiveOpen(on) {
+    const el = $('#live');
+    liveOpen = on;
+    if (on) {
+      el.hidden = false;
+      if (!liveEyes) {
+        liveEyes = new JioEyes($('#live-eyes'), { size: 0.42, gap: 0.5, idle: true, track: false });
+      }
+      liveEyes.start();
+      liveEyes.set('curious');
+      $('#live-input').focus();
+    } else {
+      el.hidden = true;
+      el.classList.remove('has-say', 'busy');
+      liveEyes?.stop();
+      liveClearNow();
+      // live mode is a place you leave, not a mode you stay in — the composer
+      // goes back to plain chat rather than a segment that does nothing
+      researchMode = false; canvasMode = false;
+      document.querySelectorAll('.seg-btn').forEach(x => x.classList.toggle('on', x.dataset.mode === 'chat'));
+      $('#input')?.focus();
+    }
+  }
+
+  function liveClearNow() {
+    const say = $('#live-say');
+    if (say) { say.innerHTML = ''; say.classList.remove('out'); }
+    liveWords = 0;
+  }
+  /* Take the previous answer away the way it arrived, in reverse, before the
+     next one starts landing on top of it. */
+  function liveClear() {
+    const say = $('#live-say');
+    if (!say.childNodes.length) return Promise.resolve();
+    say.classList.add('out');
+    return new Promise((r) => setTimeout(() => { liveClearNow(); r(); }, 320));
+  }
+
+  /* Appends whole words as they finish arriving, never re-rendering what is
+     already on screen — each word animates once and is then static. The last
+     chunk of a growing string may still be half a word, so it's held back
+     until something follows it (liveFlush takes it at the end). */
+  function liveWrite(text, final) {
+    const say = $('#live-say');
+    let box = say.querySelector('.live-text');
+    if (!box) { box = document.createElement('div'); box.className = 'live-text'; say.appendChild(box); }
+    const parts = text.match(/\S+\s*/g) || [];
+    const ready = final ? parts.length : parts.length - 1;
+    for (; liveWords < ready; liveWords++) {
+      const w = document.createElement('span');
+      w.className = 'live-word';
+      w.textContent = parts[liveWords];
+      box.appendChild(w);
+    }
+    if (liveWords > 0) $('#live').classList.add('has-say');
+  }
+
+  async function liveAsk(text) {
+    if (abort) return;
+    const el = $('#live');
+    el.classList.add('busy');
+    liveEyes?.set('focused');
+    current.messages.push({ role: 'user', content: text });
+    await ensureChat(text);
+    await liveClear();
+
+    await compress();
+    const messages = [
+      { role: 'system', content: SYSTEM + '\n\n' + LIVE_SYSTEM },
+      ...(current.summary ? [{ role: 'system', content: `Earlier in this conversation, compressed:\n${current.summary}` }] : []),
+      ...current.messages.slice(current.upto).slice(-24),
+    ];
+    abort = new AbortController();
+    let full = '', mood = null;
+    try {
+      full = await Data.stream({
+        model: $('#model').value, messages, signal: abort.signal, temperature: 0.7,
+        onRoute: () => {},
+        onToken: (_, sofar) => {
+          if (!mood) { const m = moodIn(sofar); if (m) { mood = m; liveEyes?.set(m); } }
+          liveWrite(stripMood(sofar).replace(PARTIAL, ''), false);
+        },
+      });
+      if (!mood) mood = moodIn(full);
+      full = stripMood(full);
+      liveWrite(full, true);
+      current.messages.push({ role: 'assistant', content: full });
+      if (current.id) {
+        Data.addMessage(current.id, 'assistant', full).catch(() => {});
+        Data.touchChat(current.id).catch(() => {});
+      }
+      liveEyes?.set(mood || 'neutral');
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        liveClearNow();
+        liveWrite(`sorry — ${err.message}`, true);
+        liveEyes?.set('sad');
+      }
+    } finally {
+      abort = null;
+      el.classList.remove('busy');
+      if (liveOpen) $('#live-input').focus();
+    }
+  }
+
+  function setupLive() {
+    $('#live-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = $('#live-input');
+      const text = input.value.trim();
+      if (!text || abort) return;
+      input.value = '';
+      liveAsk(text);
+    });
+    $('#live-exit').addEventListener('click', () => setLiveOpen(false));
+    addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && liveOpen) { abort?.abort(); setLiveOpen(false); }
+    });
+  }
+
+  async function ask(text) {
+    $('#greeting').hidden = true;
+    $('#view-chat').classList.remove('empty');
+    current.messages.push({ role: 'user', content: text });
+    const userNode = appendMsg('user', text);
+    scrollBottom(true);
+    if (isQuestionable(text)) mascot.judge();
+
+    await ensureChat(text);
 
     const node = appendMsg('assistant', '');
     const bubble = node.querySelector('.bubble');

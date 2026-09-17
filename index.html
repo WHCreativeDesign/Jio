@@ -165,6 +165,7 @@
                   <!-- desktop-only: needs a real OS-level browser window, so js/chat.js
                        unhides this when window.jioDesktop exists and hides it otherwise -->
                   <button type="button" class="seg-btn" data-mode="research" id="research-btn" hidden>Research</button>
+                  <button type="button" class="seg-btn" data-mode="live">Live</button>
                 </div>
               </div>
               <div class="composer-right">
@@ -272,5 +273,22 @@
   <script defer src="js/supa.js"></script>
   <script defer src="js/mascot.js"></script>
   <script defer src="js/chat.js"></script>
+  <!-- Live mode: one conversation, one visible answer. Everything else in the
+       app is hidden behind this (see .live in css/app.css) — just jio, what it
+       just said, and somewhere to type. The transcript is still kept and
+       persisted like any other chat; it simply isn't shown here. -->
+  <div class="live" id="live" hidden>
+    <button class="live-exit" id="live-exit" aria-label="leave live mode" title="leave (Esc)">
+      <svg viewBox="0 0 20 20" width="18" height="18"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+    </button>
+    <div class="live-stage">
+      <canvas class="live-eyes" id="live-eyes" width="520" height="300"></canvas>
+      <div class="live-say" id="live-say" aria-live="polite"></div>
+    </div>
+    <form class="live-form" id="live-form">
+      <input class="live-input" id="live-input" type="text" autocomplete="off" placeholder="say something" aria-label="message jio">
+    </form>
+  </div>
+
 </body>
 </html>

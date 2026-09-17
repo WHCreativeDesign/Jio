@@ -820,12 +820,17 @@ canvas { display: block; }
 .research-answer > :last-child { margin-bottom: 0; }
 
 /* ---------- live mode ---------- */
+/* The root class is .live-mode, not .live: js/mascot.js marks whichever slot
+   the eyes currently occupy with a bare `live` class, so styling `.live` here
+   landed `position: fixed; inset: 0` on the greeting slot and every message's
+   avatar slot — which dropped them out of layout and left the eyes stranded
+   at the corner of the thread. */
 /* One conversation, one visible answer. The whole app sits behind this, so
    there is nothing to read but what jio just said — no transcript, no
    sidebar, no chrome. The eyes carry the continuity instead: they hold the
    mood of the last reply, and they are the only thing on screen that persists
    between turns. */
-.live {
+.live-mode {
   position: fixed; inset: 0; z-index: 60;
   display: flex; flex-direction: column; align-items: center;
   background: var(--bg);
@@ -855,7 +860,7 @@ canvas { display: block; }
   transition: width var(--t-slow) var(--ease-pop);
 }
 /* once there's something to read, the eyes give it the room */
-.live.has-say .live-eyes { width: min(230px, 42vw); }
+.live-mode.has-say .live-eyes { width: min(230px, 42vw); }
 
 /* Bottom-anchored: new lines arrive at the bottom and shove what's already
    there upward, and anything that overruns the height fades out at the top
@@ -898,9 +903,9 @@ canvas { display: block; }
 }
 .live-input::placeholder { color: var(--fg-3); }
 .live-input:focus { outline: none; border-color: var(--line-2); background: var(--bg-hover); box-shadow: var(--edge), var(--shadow); }
-.live.busy .live-input { opacity: 0.55; }
+.live-mode.busy .live-input { opacity: 0.55; }
 
 @media (prefers-reduced-motion: reduce) {
-  .live, .live-word, .live-say.out { animation: none; }
+  .live-mode, .live-word, .live-say.out { animation: none; }
   .live-eyes { transition: none; }
 }

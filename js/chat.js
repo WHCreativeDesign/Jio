@@ -334,7 +334,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
   }
 
   /* ---------- account menu ---------- */
-  const VERSION = '0.8.8';
+  const VERSION = '0.8.9';
   function setupMeMenu() {
     const btn = $('#me'), menu = $('#me-menu');
     $('#me-version').textContent = `jio v${VERSION}`;
@@ -701,13 +701,100 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
      the latest answer is, and it's replaced each turn. */
   const LIVE_SYSTEM = `This is a live, spoken-feeling conversation. Reply in plain conversational prose — no markdown, no headings, no bullet points, no code blocks, no emoji. Two or three sentences at most unless genuinely asked for more. Only the latest reply is on screen, so never refer to "above" or "earlier in this list", and do not number things across turns. You still remember the whole conversation; talk like someone who does.`;
 
-  let liveEyes = null, liveWords = 0, liveOpen = false;
+  let liveEyes = null, liveOpen = false;
+
+  /* Cadence. Tokens arrive in whatever clumps the network and the model feel
+     like — five words at once, then nothing for 300ms — so painting them the
+     moment they land makes the answer stutter out in blocks. Words go into a
+     queue instead and leave it on a rhythm of their own: a steady beat, a
+     breath at a comma, a longer one at the end of a sentence, and a little
+     jitter so it never sounds like a metronome. It also means only a word or
+     two is ever animating at once rather than a whole clump. */
+  const LIVE_PACE = { base: 62, jitter: 18, clause: 130, sentence: 290, newline: 200 };
+  let liveQueue = [], liveQueued = 0, liveTimer = 0, liveStreamDone = false, liveOnDrain = null;
+
+  const liveReduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function livePauseAfter(w) {
+    const t = w.trimEnd();
+    if (/[.!?]["'\u2019\u201d)\]]?$/.test(t)) return LIVE_PACE.sentence;
+    if (/[,;:\u2014\u2013]$/.test(t)) return LIVE_PACE.clause;
+    if (/\n/.test(w)) return LIVE_PACE.newline;
+    return 0;
+  }
+
+  function liveEmit(w) {
+    // Nothing is ever painted into a stage that has been left. A provider's
+    // stream does not always stop the instant it is aborted, and whatever is
+    // still arriving must not land on — or reappear on top of — a closed one.
+    if (!liveOpen) return;
+    const say = $('#live-say');
+    let box = say.querySelector('.live-text');
+    if (!box) { box = document.createElement('div'); box.className = 'live-text'; say.appendChild(box); }
+    const el = document.createElement('span');
+    el.className = 'live-word';
+    el.textContent = w;
+    box.appendChild(el);
+    const live = $('#live');
+    live.classList.add('live-said');
+    live.classList.remove('live-thinking');
+    live.classList.add('live-speaking');
+  }
+
+  function livePump() {
+    if (liveTimer) return;
+    const step = () => {
+      liveTimer = 0;
+      if (!liveQueue.length) { if (liveStreamDone) liveDrained(); return; }
+      const w = liveQueue.shift();
+      liveEmit(w);
+      // if the model has run far ahead, close the gap rather than make the
+      // reader wait out a cadence that no longer matches anything
+      const backlog = liveQueue.length;
+      const speed = backlog > 60 ? 0.3 : backlog > 24 ? 0.55 : 1;
+      const wait = (LIVE_PACE.base + Math.random() * LIVE_PACE.jitter + livePauseAfter(w)) * speed;
+      liveTimer = setTimeout(step, wait);
+    };
+    step();
+  }
+
+  /* Queue whatever whole words have arrived since last time. The final chunk
+     of a growing string may still be half a word, so it waits for something
+     to follow it — unless the stream is over, when it is whole by definition. */
+  function liveEnqueue(text) {
+    const parts = text.match(/\S+\s*/g) || [];
+    const ready = liveStreamDone ? parts.length : parts.length - 1;
+    for (; liveQueued < ready; liveQueued++) liveQueue.push(parts[liveQueued]);
+    if (liveReduced()) { while (liveQueue.length) liveEmit(liveQueue.shift()); if (liveStreamDone) liveDrained(); return; }
+    livePump();
+  }
+
+  function liveDrained() {
+    $('#live').classList.remove('live-speaking');
+    const cb = liveOnDrain; liveOnDrain = null;
+    if (cb) cb();
+  }
+
+  /* Everything still to be said is dropped — used when the answer is being
+     replaced, the stage is closing, or the turn was aborted. */
+  function liveStopSpeaking() {
+    clearTimeout(liveTimer); liveTimer = 0;
+    liveQueue = []; liveQueued = 0; liveStreamDone = false;
+    $('#live').classList.remove('live-speaking', 'live-thinking');
+    // Whoever is awaiting the drain has to be let go, or leaving mid-answer
+    // strands liveAsk on a promise that can never settle — and `abort` with
+    // it, which would leave the app believing a request is still in flight.
+    const cb = liveOnDrain; liveOnDrain = null;
+    if (cb) cb();
+  }
 
   function setLiveOpen(on) {
     const el = $('#live');
     liveOpen = on;
     if (on) {
       el.hidden = false;
+      liveClearNow();          // always open on a clean stage
+      el.classList.remove('live-said');
       if (!liveEyes) {
         liveEyes = new JioEyes($('#live-eyes'), { size: 0.42, gap: 0.5, idle: true, track: false });
       }
@@ -716,7 +803,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
       $('#live-input').focus();
     } else {
       el.hidden = true;
-      el.classList.remove('has-say', 'busy');
+      el.classList.remove('live-said', 'live-busy');
       liveEyes?.stop();
       liveClearNow();
       // live mode is a place you leave, not a mode you stay in — the composer
@@ -730,7 +817,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
   function liveClearNow() {
     const say = $('#live-say');
     if (say) { say.innerHTML = ''; say.classList.remove('out'); }
-    liveWords = 0;
+    liveStopSpeaking();
   }
   /* Take the previous answer away the way it arrived, in reverse, before the
      next one starts landing on top of it. */
@@ -741,29 +828,10 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     return new Promise((r) => setTimeout(() => { liveClearNow(); r(); }, 320));
   }
 
-  /* Appends whole words as they finish arriving, never re-rendering what is
-     already on screen — each word animates once and is then static. The last
-     chunk of a growing string may still be half a word, so it's held back
-     until something follows it (liveFlush takes it at the end). */
-  function liveWrite(text, final) {
-    const say = $('#live-say');
-    let box = say.querySelector('.live-text');
-    if (!box) { box = document.createElement('div'); box.className = 'live-text'; say.appendChild(box); }
-    const parts = text.match(/\S+\s*/g) || [];
-    const ready = final ? parts.length : parts.length - 1;
-    for (; liveWords < ready; liveWords++) {
-      const w = document.createElement('span');
-      w.className = 'live-word';
-      w.textContent = parts[liveWords];
-      box.appendChild(w);
-    }
-    if (liveWords > 0) $('#live').classList.add('has-say');
-  }
-
   async function liveAsk(text) {
     if (abort) return;
     const el = $('#live');
-    el.classList.add('busy');
+    el.classList.add('live-busy', 'live-thinking');
     liveEyes?.set('focused');
     current.messages.push({ role: 'user', content: text });
     await ensureChat(text);
@@ -783,27 +851,38 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
         onRoute: () => {},
         onToken: (_, sofar) => {
           if (!mood) { const m = moodIn(sofar); if (m) { mood = m; liveEyes?.set(m); } }
-          liveWrite(stripMood(sofar).replace(PARTIAL, ''), false);
+          liveEnqueue(stripMood(sofar).replace(PARTIAL, ''));
         },
       });
       if (!mood) mood = moodIn(full);
       full = stripMood(full);
-      liveWrite(full, true);
+      // Persist as soon as the network is done — that's a data question. What
+      // is still on screen is a separate, slower thing: the rest of the answer
+      // is still being spoken, so the eyes only settle into the reply's mood
+      // once the last word is actually out.
       current.messages.push({ role: 'assistant', content: full });
       if (current.id) {
         Data.addMessage(current.id, 'assistant', full).catch(() => {});
         Data.touchChat(current.id).catch(() => {});
       }
+      await new Promise((done) => {
+        liveOnDrain = done;
+        liveStreamDone = true;
+        liveEnqueue(full);
+      });
       liveEyes?.set(mood || 'neutral');
     } catch (err) {
       if (err.name !== 'AbortError') {
         liveClearNow();
-        liveWrite(`sorry — ${err.message}`, true);
+        liveStreamDone = true;
+        liveEnqueue(`sorry — ${err.message}`);
         liveEyes?.set('sad');
+      } else {
+        liveStopSpeaking();
       }
     } finally {
       abort = null;
-      el.classList.remove('busy');
+      el.classList.remove('live-busy', 'live-thinking');
       if (liveOpen) $('#live-input').focus();
     }
   }
@@ -815,6 +894,9 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
       const text = input.value.trim();
       if (!text || abort) return;
       input.value = '';
+      input.classList.remove('sent');
+      void input.offsetWidth;          // restart the animation on a repeat send
+      input.classList.add('sent');
       liveAsk(text);
     });
     $('#live-exit').addEventListener('click', () => setLiveOpen(false));

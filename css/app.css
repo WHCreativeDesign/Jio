@@ -820,7 +820,15 @@ canvas { display: block; }
 .research-answer > :last-child { margin-bottom: 0; }
 
 /* ---------- live mode ---------- */
-/* The root class is .live-mode, not .live: js/mascot.js marks whichever slot
+/* Every class on the live stage's root is prefixed `live-`, states included
+   (live-thinking, live-speaking, live-busy, live-said). Twice now an
+   unprefixed one has collided with a class this app already uses elsewhere:
+   `.live` is what js/mascot.js marks the eyes' current slot with, and
+   `.thinking` is the chat bubble's own status row — which is `height: 24px`,
+   so wearing it collapsed this full-screen stage to 48px. Nothing goes on
+   that element without the prefix.
+
+   The root class is .live-mode, not .live: js/mascot.js marks whichever slot
    the eyes currently occupy with a bare `live` class, so styling `.live` here
    landed `position: fixed; inset: 0` on the greeting slot and every message's
    avatar slot — which dropped them out of layout and left the eyes stranded
@@ -860,7 +868,7 @@ canvas { display: block; }
   transition: width var(--t-slow) var(--ease-pop);
 }
 /* once there's something to read, the eyes give it the room */
-.live-mode.has-say .live-eyes { width: min(230px, 42vw); }
+.live-mode.live-said .live-eyes { width: min(230px, 42vw); }
 
 /* Bottom-anchored: new lines arrive at the bottom and shove what's already
    there upward, and anything that overruns the height fades out at the top
@@ -883,9 +891,13 @@ canvas { display: block; }
 /* Each word arrives out of focus and below where it belongs, then rises and
    sharpens into place — the "push up" is this, plus the block growing
    upward against its bottom edge. */
-.live-word { display: inline-block; white-space: pre-wrap; animation: live-word 0.52s var(--ease) both; }
+/* Each word settles rather than flies: a short rise out of a soft blur. The
+   distance is deliberately small — words now arrive one at a time on their own
+   cadence (LIVE_PACE in js/chat.js) instead of a clump at once, so the motion
+   only has to read at the scale of a single word. */
+.live-word { display: inline-block; white-space: pre-wrap; animation: live-word 0.44s var(--ease) both; }
 @keyframes live-word {
-  from { opacity: 0; filter: blur(9px); transform: translateY(15px); }
+  from { opacity: 0; filter: blur(7px); transform: translateY(10px); }
   to   { opacity: 1; filter: blur(0);   transform: none; }
 }
 /* the outgoing answer leaves the same way it came, in reverse */
@@ -903,9 +915,31 @@ canvas { display: block; }
 }
 .live-input::placeholder { color: var(--fg-3); }
 .live-input:focus { outline: none; border-color: var(--line-2); background: var(--bg-hover); box-shadow: var(--edge), var(--shadow); }
-.live-mode.busy .live-input { opacity: 0.55; }
+.live-mode.live-busy .live-input { opacity: 0.55; }
+/* Pressing enter should feel like the words left your hands. */
+.live-input.sent { animation: live-sent 0.34s var(--ease-pop); }
+@keyframes live-sent {
+  40% { transform: scale(0.985); border-color: var(--fg-3); }
+  to  { transform: none; }
+}
+
+/* Between sending and the first word there was nothing to look at, and while
+   an answer came out the eyes sat perfectly still — both read as frozen. A
+   slow deep breath while thinking, a smaller faster one while speaking. Both
+   are transform-only, so they cost nothing to run. */
+.live-mode.live-thinking .live-eyes { animation: live-breathe 2.5s ease-in-out infinite; }
+@keyframes live-breathe {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50%      { transform: translateY(-5px) scale(1.025); }
+}
+.live-mode.live-speaking .live-eyes { animation: live-talk 1.5s ease-in-out infinite; }
+@keyframes live-talk {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-2.5px); }
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .live-mode, .live-word, .live-say.out { animation: none; }
+  .live-mode, .live-word, .live-say.out, .live-input.sent,
+  .live-mode.live-thinking .live-eyes, .live-mode.live-speaking .live-eyes { animation: none; }
   .live-eyes { transition: none; }
 }

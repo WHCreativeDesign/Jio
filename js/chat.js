@@ -51,6 +51,81 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     }
     return { html, applied, failed };
   }
+  /* ---------- memory ----------
+     Durable, user-level, and the reason a turn no longer has to carry the
+     whole conversation. A compact numbered block goes over as one system
+     message; the verbatim window behind it is short (KEEP_LIVE) instead of
+     the twenty-four messages it used to be.
+
+     jio edits it the same way it sets its mood — a plain-text tag in the
+     reply, stripped before display. Native tool-calling is deliberately not
+     used anywhere in this app: it has to behave identically across four
+     unrelated providers, and one of them has already been caught inventing
+     <tool_call> XML nobody asked for.
+
+       {{remember: builds a platform called Cloak}}
+       {{revise: 3 | prefers short answers, no preamble}}
+       {{forget: 3}}
+
+     The numbers are the ones shown in the injected block, not database ids —
+     a model will not reliably copy a uuid, and it does not need to. */
+  const MEM_MAX = 60;              // hard ceiling; memory that grows forever stops being cheap
+  const MEM_TAG = /\{\{\s*(remember|forget|revise)\s*:\s*([\s\S]*?)\}\}/gi;
+  let memories = [];
+
+  const memBlock = () => memories.length
+    ? 'What you already know about this person (your memory, carried between conversations):\n'
+      + memories.map((m, i) => `[${i + 1}] ${m.text}`).join('\n')
+      + '\n\nThese are notes you wrote. Use them; do not recite them back unprompted.'
+    : '';
+
+  /* Terse on purpose: this rides along on every single turn, so every
+     sentence in it is rent. The first draft ran 828 characters and cost more
+     than the smaller history window saved until a conversation was about
+     twenty messages long. */
+  const MEMORY_SYSTEM = `To keep something worth carrying between conversations, put a tag on its own line — {{remember: builds a platform called Cloak}}. Fix or drop one by its number above: {{revise: 3 | prefers short answers}}, {{forget: 3}}. One durable fact per tag, under 240 chars, phrased as a standing note. Most turns need none. Never mention the tags; they are stripped before the reply is shown.`
+
+  const stripMemTags = (t) => t.replace(MEM_TAG, '').replace(/\n{3,}/g, '\n\n').trim();
+
+  /* Applies whatever the reply asked for, against the numbering the model was
+     actually shown — so it's resolved before the list is mutated. Each edit is
+     independent: one bad tag never stops the rest. */
+  async function applyMemTags(text) {
+    MEM_TAG.lastIndex = 0;
+    const shown = memories.slice();
+    const jobs = [];
+    let m;
+    while ((m = MEM_TAG.exec(text))) {
+      const kind = m[1].toLowerCase(), body = m[2].trim();
+      if (kind === 'remember') {
+        if (body && memories.length + jobs.length < MEM_MAX) jobs.push({ kind, text: body });
+      } else if (kind === 'forget') {
+        const row = shown[parseInt(body, 10) - 1];
+        if (row) jobs.push({ kind, id: row.id });
+      } else if (kind === 'revise') {
+        const [n, ...rest] = body.split('|');
+        const row = shown[parseInt(n, 10) - 1];
+        const t = rest.join('|').trim();
+        if (row && t) jobs.push({ kind, id: row.id, text: t });
+      }
+    }
+    if (!jobs.length) return false;
+    for (const j of jobs) {
+      try {
+        if (j.kind === 'remember') await Data.addMemory(j.text, 'jio');
+        else if (j.kind === 'forget') await Data.deleteMemory(j.id);
+        else await Data.updateMemory(j.id, j.text);
+      } catch (e) { /* one refused edit must not cost the others */ }
+    }
+    await loadMemories();
+    return true;
+  }
+
+  async function loadMemories() {
+    try { memories = await Data.memories(); } catch (e) { memories = []; }
+    renderMemories();
+  }
+
   const MOODS = new Set(['neutral', 'happy', 'curious', 'focused', 'surprised', 'sad', 'confused', 'suspicious', 'excited', 'love', 'sleepy']);
   // Models put the tag wherever they like — often at the end despite being asked
   // for it first — so find it anywhere and strip every occurrence.
@@ -326,15 +401,87 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     Tween.run(() => {
       $('#view-chat').hidden = v !== 'chat';
       $('#view-pool').hidden = v !== 'pool';
+      $('#view-memory').hidden = v !== 'memory';
       document.querySelectorAll('.nav-item[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === v));
       if (matchMedia('(max-width: 900px)').matches) app.classList.add('collapsed');
     });
     if (v === 'chat') mascot.sync();
     if (v === 'pool') renderPool();
+    if (v === 'memory') { loadMemories(); }
+  }
+
+  /* The list is the real thing, not a report of it: each line edits in place
+     and saves on blur, so correcting something jio got slightly wrong is the
+     same gesture as reading it. */
+  function renderMemories() {
+    const list = $('#mem-list'); if (!list) return;
+    list.innerHTML = '';
+    if (!memories.length) {
+      list.innerHTML = '<li class="mem-empty">nothing yet — jio writes here as things come up, or add something above.</li>';
+    }
+    memories.forEach((m) => {
+      const li = document.createElement('li');
+      li.className = 'mem-item';
+      const txt = document.createElement('div');
+      txt.className = 'mem-text';
+      txt.contentEditable = 'plaintext-only';
+      txt.spellcheck = false;
+      txt.textContent = m.text;
+      const save = async () => {
+        const t = txt.textContent.trim().slice(0, 240);
+        if (!t) { txt.textContent = m.text; return; }
+        if (t === m.text) return;
+        try { await Data.updateMemory(m.id, t); m.text = t; memNote('saved'); }
+        catch (e) { txt.textContent = m.text; memNote(e.message); }
+      };
+      txt.addEventListener('blur', save);
+      txt.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); txt.blur(); } });
+      const who = document.createElement('span');
+      who.className = 'mem-src';
+      who.textContent = m.source === 'you' ? 'you' : 'jio';
+      const del = document.createElement('button');
+      del.className = 'icon-btn sm mem-del';
+      del.type = 'button';
+      del.title = 'forget this';
+      del.setAttribute('aria-label', 'forget this');
+      del.innerHTML = '<svg viewBox="0 0 20 20" width="15" height="15"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+      del.addEventListener('click', async () => {
+        try { await Data.deleteMemory(m.id); memories = memories.filter(x => x.id !== m.id); renderMemories(); memNote('forgotten'); }
+        catch (e) { memNote(e.message); }
+      });
+      li.append(who, txt, del);
+      list.appendChild(li);
+    });
+    memCount();
+  }
+
+  let memNoteT = 0;
+  function memNote(msg) {
+    const n = $('#mem-note'); if (!n) return;
+    n.textContent = msg;
+    clearTimeout(memNoteT);
+    memNoteT = setTimeout(memCount, 1800);
+  }
+  function memCount() {
+    const n = $('#mem-note'); if (!n) return;
+    n.textContent = `${memories.length} of ${MEM_MAX} — kept small on purpose, so it's cheap to carry into every turn.`;
+  }
+
+  function setupMemory() {
+    $('#mem-add')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const input = $('#mem-new');
+      const t = input.value.trim();
+      if (!t) return;
+      if (memories.length >= MEM_MAX) { memNote(`that's the ${MEM_MAX} limit — drop one first`); return; }
+      input.value = '';
+      try { await Data.addMemory(t, 'you'); await loadMemories(); memNote('remembered'); }
+      catch (e2) { memNote(e2.message); }
+    });
   }
 
   /* ---------- account menu ---------- */
-  const VERSION = '0.8.9';
+  const VERSION = '0.9.0';
   function setupMeMenu() {
     const btn = $('#me'), menu = $('#me-menu');
     $('#me-version').textContent = `jio v${VERSION}`;
@@ -346,6 +493,8 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     $('#signout').addEventListener('click', async () => { await Auth.signOut(); location.reload(); });
     setupUpdateButton();
     setupLive();
+    setupMemory();
+    loadMemories();
   }
 
   /* Only exists inside the Electron shell — window.jioDesktop is undefined
@@ -581,6 +730,10 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
      the chat row, so reopening it later doesn't pay to redo the same work. */
   const CTX_BUDGET = 24000;   // characters of history before it's worth compressing
   const KEEP_RECENT = 8;      // turns that always travel intact
+  /* The verbatim window actually sent each turn. It used to be 24 messages;
+     memory (see memBlock) now carries what mattered from further back, so the
+     window only has to hold the live thread of the current exchange. */
+  const KEEP_LIVE = 10;
   const SUMMARIZE = `Compress this conversation into a dense brief for an assistant that has to continue it. Keep names, decisions, file paths, code identifiers, numbers, stated preferences and anything still unresolved. Drop pleasantries and restatement. No preamble, no headings. Under 200 words.`;
 
   async function compress() {
@@ -840,8 +993,9 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     await compress();
     const messages = [
       { role: 'system', content: SYSTEM + '\n\n' + LIVE_SYSTEM },
+      { role: 'system', content: memBlock() ? memBlock() + '\n\n' + MEMORY_SYSTEM : MEMORY_SYSTEM },
       ...(current.summary ? [{ role: 'system', content: `Earlier in this conversation, compressed:\n${current.summary}` }] : []),
-      ...current.messages.slice(current.upto).slice(-24),
+      ...current.messages.slice(current.upto).slice(-KEEP_LIVE),
     ];
     abort = new AbortController();
     let full = '', mood = null;
@@ -851,11 +1005,13 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
         onRoute: () => {},
         onToken: (_, sofar) => {
           if (!mood) { const m = moodIn(sofar); if (m) { mood = m; liveEyes?.set(m); } }
-          liveEnqueue(stripMood(sofar).replace(PARTIAL, ''));
+          liveEnqueue(stripMemTags(stripMood(sofar).replace(PARTIAL, '')));
         },
       });
       if (!mood) mood = moodIn(full);
       full = stripMood(full);
+      applyMemTags(full);   // fire-and-forget: a memory write must never delay the reply
+      full = stripMemTags(full);
       // Persist as soon as the network is done — that's a data question. What
       // is still on screen is a separate, slower thing: the rest of the answer
       // is still being spoken, so the eyes only settle into the reply's mood
@@ -928,11 +1084,16 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     // context compression from ever having to deal with a repeated giant blob
     const editMode = canvasMode && !!canvasHtml;
     await compress();
+    /* Memory carries what matters between turns, so the verbatim window behind
+       it is KEEP_LIVE messages rather than the twenty-four it used to be —
+       that, not the summary, is what stops every turn re-sending the whole
+       conversation. */
     const messages = [
       { role: 'system', content: SYSTEM + (canvasMode ? (editMode ? CANVAS_EDIT_SYSTEM : CANVAS_SYSTEM) : '') },
+      { role: 'system', content: memBlock() ? memBlock() + '\n\n' + MEMORY_SYSTEM : MEMORY_SYSTEM },
       ...(editMode ? [{ role: 'system', content: `Current canvas code:\n\n\`\`\`html\n${canvasHtml}\n\`\`\`` }] : []),
       ...(current.summary ? [{ role: 'system', content: `Earlier in this conversation, compressed:\n${current.summary}` }] : []),
-      ...current.messages.slice(current.upto).slice(-24),
+      ...current.messages.slice(current.upto).slice(-KEEP_LIVE),
     ];
     abort = new AbortController();
     $('#send').classList.add('stop');
@@ -963,7 +1124,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
           // an edit-mode reply is diff markup, not prose — nothing worth
           // streaming live; the thinking indicator stays up until it's ready
           if (editMode) return;
-          const shown = stripMood(sofar).replace(PARTIAL, '');
+          const shown = stripMemTags(stripMood(sofar).replace(PARTIAL, ''));
           const split = codeSplit(shown);
           if (split) {
             streamCollapsedCode(bubble, split);
@@ -979,6 +1140,8 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
       });
       if (!mood) mood = moodIn(full);
       full = stripMood(full);
+      applyMemTags(full);   // fire-and-forget: a memory write must never delay the reply
+      full = stripMemTags(full);
       if (editMode) {
         const { html: edited, applied, failed } = applyEdits(canvasHtml, full);
         const fullBlock = extractHtml(full);

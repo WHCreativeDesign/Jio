@@ -1,6 +1,6 @@
 {
   "name": "jio-desktop",
-  "version": "0.8.9",
+  "version": "0.9.0",
   "private": true,
   "description": "jio, packaged as a desktop app with an offline local model.",
   "author": "WHCreativeDesign",

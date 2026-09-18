@@ -105,6 +105,35 @@
     },
     async setMessage(id, content) { await db.from('messages').update({ content }).eq('id', id); },
 
+    /* ---------- memory ----------
+       What jio carries between chats, so a turn doesn't have to resend the
+       whole conversation to know who it is talking to. Kept deliberately
+       small: MEM_MAX rows, each capped by the column's own check constraint. */
+    async memories() {
+      const { data, error } = await db.from('memories')
+        .select('id, text, source, created_at, updated_at')
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      return data || [];
+    },
+    async addMemory(text, source = 'jio') {
+      const t = String(text).trim().slice(0, 240);
+      if (!t) throw new Error('nothing to remember');
+      const { data, error } = await db.from('memories')
+        .insert({ owner: user.id, text: t, source })
+        .select('id, text, source, created_at, updated_at').single();
+      if (error) throw error;
+      return data;
+    },
+    async updateMemory(id, text) {
+      const t = String(text).trim().slice(0, 240);
+      if (!t) throw new Error('nothing to remember');
+      const { error } = await db.from('memories')
+        .update({ text: t, updated_at: new Date().toISOString() }).eq('id', id);
+      if (error) throw error;
+    },
+    async deleteMemory(id) { await db.from('memories').delete().eq('id', id); },
+
     /* ---------- key pool ---------- */
     async myKeys() {
       const { data, error } = await db.from('donated_keys')

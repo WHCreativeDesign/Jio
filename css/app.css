@@ -943,3 +943,47 @@ canvas { display: block; }
   .live-mode.live-thinking .live-eyes, .live-mode.live-speaking .live-eyes { animation: none; }
   .live-eyes { transition: none; }
 }
+
+/* ---------- memory ---------- */
+/* The list is the store, not a readout of it — every line is editable in
+   place, so fixing something jio half-remembered is the same gesture as
+   reading it. */
+.mem-card { max-width: 720px; }
+.mem-add { display: flex; gap: 8px; margin-bottom: 14px; }
+.mem-add input {
+  flex: 1; min-width: 0; color: var(--fg); background: var(--bg-elev);
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  font: 14.5px/1.4 var(--sans);
+  transition: border-color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease);
+}
+.mem-add input::placeholder { color: var(--fg-3); }
+.mem-add input:focus { outline: none; border-color: var(--line-2); background: var(--bg-hover); }
+
+.mem-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.mem-item {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: start; gap: 10px;
+  padding: 9px 8px 9px 10px; border-radius: 10px;
+  transition: background-color var(--t-fast) var(--ease);
+}
+.mem-item:hover { background: var(--bg-hover); }
+/* who wrote it — jio's own notes read differently from ones you set yourself */
+.mem-src {
+  flex: none; margin-top: 1px; font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--fg-3); border: 1px solid var(--line); border-radius: 999px; padding: 2px 7px;
+}
+.mem-text {
+  font-size: 14.5px; line-height: 1.5; color: var(--fg-2);
+  border-radius: 6px; padding: 1px 4px; margin: -1px -4px;
+  transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+.mem-text:hover { color: var(--fg); }
+.mem-text:focus { outline: none; background: var(--bg-code); color: var(--fg); }
+/* the delete only shows up once you're actually on the line */
+.mem-del { opacity: 0; transition: opacity var(--t-fast) var(--ease); }
+.mem-item:hover .mem-del, .mem-del:focus-visible { opacity: 1; }
+.mem-empty { color: var(--fg-3); font-size: 14px; padding: 10px; }
+
+@media (max-width: 900px) {
+  .mem-del { opacity: 1; }   /* nothing to hover on a touch screen */
+  .mem-add { flex-wrap: wrap; }
+}

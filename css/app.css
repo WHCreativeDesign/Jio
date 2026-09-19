@@ -170,7 +170,9 @@ canvas { display: block; }
    the same type, so a plain `0` -> `minmax(380px, 46%)` is a discrete jump —
    the canvas popped open while the sidebar (length -> length) slid correctly.
    Same reason the sidebar track is `0px`, not `0`. */
-.app { display: grid; grid-template-columns: 280px 1fr minmax(0px, 0%); height: 100vh; height: 100dvh; transition: grid-template-columns var(--panel-slide) var(--ease); }
+/* position: relative so .aura (see "the room jio is in") measures against the
+   app frame rather than the viewport. */
+.app { position: relative; display: grid; grid-template-columns: 280px 1fr minmax(0px, 0%); height: 100vh; height: 100dvh; transition: grid-template-columns var(--panel-slide) var(--ease); }
 .app.collapsed { grid-template-columns: 0px 1fr minmax(0px, 0%); }
 .app.canvas-open { grid-template-columns: 280px 1fr minmax(380px, 46%); }
 .app.collapsed.canvas-open { grid-template-columns: 0px 1fr minmax(380px, 50%); }
@@ -623,7 +625,10 @@ canvas { display: block; }
    visible so a "judge" reaction can balloon past its slot's bounds. */
 .mascot {
   position: absolute; left: 0; top: 0; width: 66px; height: 42px;
-  z-index: 5; cursor: pointer; will-change: transform, width, height;
+  /* transform only: width/height are now written just on arrival at a
+     differently-sized slot (see apply() in js/mascot.js), and hinting a
+     property that almost never changes only costs the compositor memory. */
+  z-index: 5; cursor: pointer; will-change: transform;
 }
 .mascot canvas {
   position: absolute; left: 50%; top: 50%; width: 64px; height: 40px;
@@ -841,7 +846,16 @@ canvas { display: block; }
 .live-mode {
   position: fixed; inset: 0; z-index: 60;
   display: flex; flex-direction: column; align-items: center;
-  background: var(--bg);
+  /* The same mood light as the rest of the app (see .aura), painted straight
+     into the stage's own background — this sits over the whole app, so it
+     would otherwise be the one room jio's mood never reached. Centred behind
+     the eyes rather than rising from the composer, because here the eyes are
+     what you are looking at. */
+  background:
+    radial-gradient(70% 46% at 50% 38%,
+      color-mix(in srgb, var(--aura) 13%, transparent) 0%,
+      transparent 68%),
+    var(--bg);
   padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
   animation: live-enter var(--t-slow) var(--ease) both;
 }
@@ -986,4 +1000,208 @@ canvas { display: block; }
 @media (max-width: 900px) {
   .mem-del { opacity: 1; }   /* nothing to hover on a touch screen */
   .mem-add { flex-wrap: wrap; }
+}
+
+/* ---------- the room jio is in ----------
+   A wash of light rising from the composer — the place on screen jio actually
+   speaks from — tinted by the mood its last reply carried. It is the one
+   piece of colour in an otherwise fully neutral warm-grey app, which is
+   exactly why it can be this quiet and still be felt: at 15% of a hue over a
+   #262624 background, you do not see a colour, you notice the room changed.
+
+   @property is what makes the change a fade rather than a cut: a custom
+   property has no type by default, so `transition: --aura` is a no-op until
+   it is registered as a colour. Where it is unsupported the tint still
+   changes, just instantly — which is a fine thing to lose. */
+@property --aura {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #6c8cff;
+}
+:root { --aura: #6c8cff; transition: --aura 1.2s var(--ease); }
+
+/* The mood vocabulary, as light. Deliberately desaturated and close together —
+   these are temperatures, not categories, and anything more saturated turns
+   the app into a mood ring. */
+:root[data-mood="inspired"]   { --aura: #f0b849; }
+:root[data-mood="delight"],
+:root[data-mood="happy"]      { --aura: #6bbf8a; }
+:root[data-mood="excited"]    { --aura: #ff9f5a; }
+:root[data-mood="wonder"]     { --aura: #7fd6e8; }
+:root[data-mood="love"]       { --aura: #e8788f; }
+:root[data-mood="curious"]    { --aura: #7ba7ff; }
+:root[data-mood="focused"],
+:root[data-mood="determined"] { --aura: #8f8cff; }
+:root[data-mood="mischief"]   { --aura: #c98cf0; }
+:root[data-mood="proud"]      { --aura: #e2c25c; }
+:root[data-mood="surprised"]  { --aura: #ffd166; }
+:root[data-mood="confused"]   { --aura: #a0a0a0; }
+:root[data-mood="suspicious"] { --aura: #d9a441; }
+:root[data-mood="sad"]        { --aura: #6d8fa8; }
+:root[data-mood="sleepy"],
+:root[data-mood="sleeping"]   { --aura: #5a6480; }
+
+.aura {
+  /* z-index: -1 rather than 0, and that is the whole trick. A positioned
+     element at z-index 0 paints above every static sibling's background and
+     text; at -1 it paints above .app's own background and below all of its
+     in-flow content. So the sidebar and the canvas panel — which paint opaque
+     backgrounds of their own — mask it for free, and the wash only ever
+     reaches the thread, which has no background at all. No z-index has to be
+     added to anything else, which matters: the panels go position:fixed on
+     mobile and anything competing with that here would break them. */
+  position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  /* Anchored low and wide: light from the composer, not a spotlight on it. */
+  background: radial-gradient(120% 62% at 50% 116%,
+    color-mix(in srgb, var(--aura) 15%, transparent) 0%,
+    color-mix(in srgb, var(--aura) 5%, transparent) 38%,
+    transparent 72%);
+  /* Held in a variable so the breathing keyframes below stay relative to it:
+     the light theme wants a much quieter wash, and a fixed keyframe opacity
+     would blow straight past that every time jio started working. */
+  --aura-o: 0.85;
+  opacity: var(--aura-o);
+  transition: opacity var(--t-slow) var(--ease);
+}
+[data-theme="light"] .aura { --aura-o: 0.5; }
+/* While jio is actually working, the room breathes with it. */
+:root[data-working] .aura { animation: aura-breathe 3.4s ease-in-out infinite; }
+@keyframes aura-breathe {
+  0%, 100% { opacity: calc(var(--aura-o) * 0.62); }
+  50% { opacity: var(--aura-o); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root { transition: none; }
+  :root[data-working] .aura { animation: none; }
+}
+
+/* ---------- asking first ----------
+   Nothing irreversible in this app happens without one of these (see
+   js/ask.js for which actions, and js/persona.js for the words). It is
+   deliberately not a system confirm(): a browser dialog is the page being
+   interrupted by the machine underneath it, and this is jio — face included —
+   asking a question. The guard rail is the same; what it feels like isn't.
+
+   Everything here animates on opacity, transform and filter only, so an
+   interruption costs a compositor frame rather than a layout pass. */
+.ask-scrim {
+  position: fixed; inset: 0; z-index: 90;
+  display: grid; place-items: center; padding: 24px;
+  /* A plain flat scrim flattens the app behind it; blurring it instead keeps
+     the context legible as context — you can still see what you are about to
+     act on, just not read it. */
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(115%);
+  backdrop-filter: blur(14px) saturate(115%);
+  animation: ask-scrim-in var(--t) var(--ease) both;
+}
+@keyframes ask-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+
+.ask {
+  width: min(400px, 100%);
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 26px 26px 20px;
+  text-align: center;
+  box-shadow: var(--edge), var(--shadow-lg);
+  /* Overshoot on the way in: the dialog arrives with weight instead of
+     appearing. Short enough that it never delays an answer. */
+  animation: ask-in 0.34s var(--ease-pop) both;
+  transform-origin: center;
+}
+@keyframes ask-in {
+  from { opacity: 0; transform: scale(0.93) translateY(14px); filter: blur(6px); }
+  to { opacity: 1; transform: none; filter: blur(0); }
+}
+/* Leaving is faster than arriving — a decision already made shouldn't be
+   watched on its way out. */
+.ask-scrim.ask-out { animation: ask-scrim-in 0.18s var(--ease) reverse both; }
+.ask-scrim.ask-out .ask { animation: ask-out 0.18s var(--ease) both; }
+@keyframes ask-out {
+  to { opacity: 0; transform: scale(0.97) translateY(6px); }
+}
+
+.ask-face { width: 128px; height: 68px; margin: 0 auto 4px; }
+.ask-face canvas { width: 100%; height: 100%; }
+.ask-title {
+  font-family: var(--serif); font-weight: 400; font-size: 24px; letter-spacing: -0.015em;
+  margin: 6px 0 8px; line-height: 1.2; text-wrap: balance;
+}
+.ask-body {
+  margin: 0 0 20px; color: var(--fg-2); font-size: 14px; line-height: 1.55;
+  text-wrap: pretty;
+  /* a memory or chat title is quoted straight into this line, and an
+     unbroken pasted string should wrap rather than widen the dialog */
+  overflow-wrap: anywhere;
+}
+.ask-actions { display: flex; gap: 8px; }
+.ask-btn {
+  flex: 1; height: 40px; padding: 0 16px; border-radius: 999px;
+  font-size: 14px; font-weight: 500;
+  transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease),
+              filter var(--t-fast) var(--ease), transform var(--t-fast) var(--ease-pop);
+}
+.ask-btn:active { transform: scale(0.97); }
+.ask-no { background: var(--bg-hover); color: var(--fg); }
+.ask-no:hover { background: var(--bg-active); }
+.ask-yes { background: var(--accent); color: var(--accent-ink); }
+.ask-yes:hover { filter: brightness(1.08); }
+/* Destructive actions wear it. The cancel is the wider, calmer target and the
+   one that opens focused (see js/ask.js) — the reflexive Enter is never the
+   one that deletes something. */
+.ask-danger .ask-yes { background: var(--danger); color: var(--bg); }
+.ask-danger .ask-no { flex: 1.35; }
+
+/* ---------- receipts ----------
+   The other half of asking first: having said yes, you get a line back
+   instead of silence. Bottom-center, never focus-stealing, click to dismiss. */
+.toast-rail {
+  position: fixed; left: 50%; bottom: max(22px, env(safe-area-inset-bottom));
+  transform: translateX(-50%); z-index: 95;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto; cursor: default;
+  padding: 9px 16px; border-radius: 999px;
+  background: var(--bg-elev); border: 1px solid var(--line);
+  box-shadow: var(--edge), var(--shadow);
+  font-size: 13.5px; color: var(--fg-2); white-space: nowrap;
+  animation: toast-in 0.28s var(--ease-pop) both;
+}
+.toast-ok { color: var(--ok); }
+.toast-err { color: var(--danger); }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+.toast.toast-out { animation: toast-out 0.24s var(--ease) both; }
+@keyframes toast-out {
+  to { opacity: 0; transform: translateY(6px) scale(0.98); }
+}
+
+/* ---------- entrances ----------
+   The empty chat screen is the first thing anyone sees, and it used to appear
+   all at once. Staggering it — eyes, then greeting, then the composer — takes
+   about a third of a second and is the difference between a screen being
+   revealed and an app opening. */
+/* Deliberately not the .greeting wrapper: #greet-slot lives inside it, and
+   the mascot measures that slot's live bounding box to know where to park.
+   A transform on the wrapper moves that box, so the eyes would settle onto
+   wherever the entrance happened to be mid-flight and stay there. The text
+   and the composer animate; the slot holds still. */
+.view-chat.empty .greet-text { animation: rise 0.6s var(--ease) 0.06s both; }
+.view-chat.empty .composer-wrap { animation: rise 0.6s var(--ease) 0.12s both; }
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); filter: blur(5px); }
+  to { opacity: 1; transform: none; filter: blur(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-scrim, .ask, .ask-scrim.ask-out, .ask-scrim.ask-out .ask,
+  .toast, .toast.toast-out,
+  .view-chat.empty .greet-text,
+  .view-chat.empty .composer-wrap { animation: none; }
+  .ask-btn:active { transform: none; }
 }

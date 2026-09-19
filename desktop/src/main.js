@@ -6,7 +6,7 @@
 // through this same server at /local/* (proxied through to llama-server's own
 // port — see proxyToLlama below) so the renderer never makes a cross-origin
 // request. No network required once the model is downloaded.
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, Tray, Menu, Notification, globalShortcut, nativeImage } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -24,6 +24,16 @@ const MODELS_DIR = path.join(app.getPath('userData'), 'models');
 const LLAMA_PORT = 8790;
 const STATIC_PORT = 8791;
 const CAPTION_H = 36;
+const ICON_PATH = path.join(__dirname, '..', 'build', 'icon.ico');
+
+// A handful of shell features below (tray, jump list, thumbar buttons, taskbar
+// progress, native toasts, a global summon shortcut) only make sense — or only
+// exist as APIs at all — on Windows, so they're gated on this rather than
+// sprinkled with inline platform checks. setAppUserModelId has to run before
+// any notification is shown or Windows won't credit them to jio (they'd show
+// as coming from "Electron" instead, unstyled).
+const IS_WINDOWS = process.platform === 'win32';
+if (IS_WINDOWS) app.setAppUserModelId('org.usecloak.jio');
 
 // Bartowski's GGUF quantizations are the de facto standard, one file per
 // quant level. Swap this (and MODEL_FILE) to move to a different model or
@@ -34,10 +44,28 @@ const MODEL_URL = 'https://huggingface.co/bartowski/Qwen2.5-3B-Instruct-GGUF/res
 let mainWindow = null;
 let llamaProc = null;
 let llamaStatus = { state: 'idle', detail: '' }; // idle | downloading | starting | ready | error
+let tray = null;
+let isQuitting = false;
+
+/* ---------- Windows taskbar progress ----------
+   setProgressBar takes 0..1 for a determinate bar; passing a value > 1 (with
+   an explicit indeterminate mode) covers the gap before a download's total
+   size is known yet. null clears the bar. Both the model download below and
+   the update-check further down feed through this one function. */
+function setTaskbarProgress(fraction, indeterminate = false) {
+  if (!IS_WINDOWS || !mainWindow) return;
+  if (fraction == null) { mainWindow.setProgressBar(-1); return; }
+  mainWindow.setProgressBar(indeterminate ? 2 : fraction, indeterminate ? { mode: 'indeterminate' } : undefined);
+}
 
 function setStatus(state, detail = '') {
   llamaStatus = { state, detail };
   if (mainWindow) mainWindow.webContents.send('jio:local-status', llamaStatus);
+  if (state !== 'downloading') { setTaskbarProgress(null); return; }
+  try {
+    const { received, total } = JSON.parse(detail || '{}');
+    setTaskbarProgress(total ? received / total : 0, !total);
+  } catch { setTaskbarProgress(0, true); }
 }
 
 /* ---------- update check (manual button, and the silent one at launch) ---------- */
@@ -46,6 +74,9 @@ let updateStatus = { state: 'idle', detail: '' };
 function setUpdateStatus(state, detail = '') {
   updateStatus = { state, detail };
   if (mainWindow) mainWindow.webContents.send('jio:update-status', updateStatus);
+  if (state === 'downloading') setTaskbarProgress((Number(detail) || 0) / 100);
+  else setTaskbarProgress(null);
+  if (state === 'downloaded') notify('Update ready', `jio v${detail} downloaded — restart to install.`);
 }
 autoUpdater.on('checking-for-update', () => setUpdateStatus('checking'));
 autoUpdater.on('update-available', (i) => setUpdateStatus('available', i.version));
@@ -66,9 +97,9 @@ autoUpdater.on('error', (e) => setUpdateStatus('error', e.message));
 const CAN_AUTO_UPDATE = process.platform !== 'darwin';
 const RELEASES_URL = 'https://github.com/WHCreativeDesign/Jio/releases/latest';
 
-function checkForUpdates(notify) {
-  if (isDev) { setUpdateStatus(notify ? 'not-available' : 'idle'); return; }
-  if (!CAN_AUTO_UPDATE) { setUpdateStatus(notify ? 'manual' : 'idle'); return; }
+function checkForUpdates(announce) {
+  if (isDev) { setUpdateStatus(announce ? 'not-available' : 'idle'); return; }
+  if (!CAN_AUTO_UPDATE) { setUpdateStatus(announce ? 'manual' : 'idle'); return; }
   return autoUpdater.checkForUpdates().catch((e) => setUpdateStatus('error', e.message));
 }
 
@@ -227,6 +258,94 @@ ipcMain.handle('jio:check-for-updates', () => checkForUpdates(true));
 ipcMain.handle('jio:quit-and-install', () => autoUpdater.quitAndInstall());
 ipcMain.handle('jio:open-releases', () => shell.openExternal(RELEASES_URL));
 
+/* ---------- Windows shell integration ----------
+   Tray, jump list, thumbnail toolbar, taskbar progress (above), a global
+   summon shortcut, and native toasts — all things either exclusive to the
+   Windows API surface (jump lists, thumbar buttons aren't a thing on macOS/
+   Linux in Electron) or that only earn their keep here because that's what
+   this pass is about. Every entry point is IS_WINDOWS-gated so the mac build
+   behaves exactly as it did before. */
+function showWindow() {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function notify(title, body) {
+  if (!IS_WINDOWS || !Notification.isSupported()) return;
+  const n = new Notification({ title, body, icon: ICON_PATH });
+  n.on('click', () => showWindow());
+  n.show();
+}
+
+// Renderer-triggered (a chat reply finishing) — only worth surfacing if jio
+// isn't the window already being looked at.
+ipcMain.handle('jio:notify', (_e, { title, body } = {}) => {
+  if (!IS_WINDOWS || mainWindow?.isFocused() || !Notification.isSupported()) return false;
+  notify(title || 'jio', body || '');
+  return true;
+});
+
+function createTray() {
+  if (!IS_WINDOWS || tray) return;
+  tray = new Tray(nativeImage.createFromPath(ICON_PATH).resize({ width: 16, height: 16 }));
+  tray.setToolTip('jio');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Show jio', click: showWindow },
+    { label: 'New chat', click: () => { showWindow(); mainWindow?.webContents.send('jio:tray-action', 'new-chat'); } },
+    { type: 'separator' },
+    { label: 'Check for updates', click: () => checkForUpdates(true) },
+    { type: 'separator' },
+    { label: 'Quit jio', click: () => { isQuitting = true; app.quit(); } },
+  ]));
+  tray.on('click', showWindow);
+}
+
+// Right-click the taskbar icon (or its jump list) for quick actions without
+// opening the window first — pure Windows: jump lists don't exist elsewhere.
+function updateJumpList() {
+  if (!IS_WINDOWS) return;
+  app.setJumpList([{
+    type: 'tasks',
+    items: [
+      { type: 'task', title: 'New chat', description: 'Start a new chat in jio', program: process.execPath, args: '--new-chat', iconPath: process.execPath, iconIndex: 0 },
+      { type: 'task', title: 'Check for updates', description: 'Check for a newer version of jio', program: process.execPath, args: '--check-updates', iconPath: process.execPath, iconIndex: 0 },
+    ],
+  }]);
+}
+
+// Hovering the taskbar icon's live thumbnail also gets a quick-action button —
+// again a Windows-only Electron API (setThumbarButtons is a no-op elsewhere).
+function setupThumbar() {
+  if (!IS_WINDOWS || !mainWindow) return;
+  mainWindow.setThumbarButtons([{
+    tooltip: 'New chat',
+    icon: nativeImage.createFromPath(ICON_PATH),
+    click: () => { showWindow(); mainWindow.webContents.send('jio:tray-action', 'new-chat'); },
+  }]);
+}
+
+// A second launch while jio's already running arrives here instead of
+// spawning a new process (see requestSingleInstanceLock below) — jump list
+// clicks and thumbar/tray actions on an already-running jio both funnel
+// through this same argv check.
+function handleLaunchArgs(argv) {
+  if (!mainWindow) return;
+  if (argv.includes('--new-chat')) mainWindow.webContents.send('jio:tray-action', 'new-chat');
+  if (argv.includes('--check-updates')) checkForUpdates(true);
+}
+
+// Ctrl+Shift+J summons jio from anywhere, like a spotlight — registered
+// process-wide via Windows' global hotkey API, not just while focused.
+function registerGlobalShortcut() {
+  if (!IS_WINDOWS) return;
+  globalShortcut.register('Control+Shift+J', () => {
+    if (mainWindow?.isVisible() && mainWindow.isFocused()) mainWindow.hide();
+    else showWindow();
+  });
+}
+
 /* ---------- research browser (real, visible, jio-driven Chromium) ---------- */
 // open()/hide() attach or hide the embedded view; setBounds keeps it glued to
 // wherever js/chat.js's ResizeObserver reports the research panel placeholder
@@ -251,14 +370,18 @@ ipcMain.handle('jio:browser-back', () => Browser.back());
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
+  app.on('second-instance', (_e, argv) => {
+    showWindow();
+    handleLaunchArgs(argv);
   });
   start();
 }
+
+// Set once by the tray's "Quit jio" (and by any other real app.quit()) so the
+// window's own 'close' handler below knows to let it actually close instead
+// of hiding to the tray.
+app.on('before-quit', () => { isQuitting = true; tray?.destroy(); });
+app.on('will-quit', () => { if (IS_WINDOWS) globalShortcut.unregisterAll(); });
 
 /* The two platforms hide their title bar in genuinely different ways, so this
    is a real branch rather than one config with a flag:
@@ -303,6 +426,18 @@ function createWindow(port) {
     },
   });
   mainWindow.loadURL(`http://127.0.0.1:${port}/`);
+  // Close (the X button) minimizes to the tray instead of quitting — the
+  // same convention Discord/Slack/Spotify use on Windows — so the local
+  // model server and any in-flight download survive being "closed". Only
+  // once isQuitting is set (tray's Quit, or any real app.quit()) does the
+  // window actually close.
+  mainWindow.on('close', (e) => {
+    if (IS_WINDOWS && tray && !isQuitting) {
+      e.preventDefault();
+      mainWindow.hide();
+    }
+  });
+  setupThumbar();
   return mainWindow;
 }
 
@@ -310,6 +445,10 @@ function start() {
 app.whenReady().then(async () => {
   const { port } = await startStaticServer();
   createWindow(port);
+  createTray();
+  updateJumpList();
+  registerGlobalShortcut();
+  handleLaunchArgs(process.argv);
 
   /* macOS keeps the app running with every window closed (see
      window-all-closed below), so clicking the Dock icon has to be able to

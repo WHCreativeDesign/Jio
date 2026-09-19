@@ -354,6 +354,17 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     // research mode drives a real OS browser window electron opens — nothing
     // to open on the GitHub Pages build, so the button stays hidden there
     const btn = $('#research-btn'); if (btn) btn.hidden = false;
+    setupTrayActions();
+  }
+  // Windows-only: the tray menu, jump list and taskbar thumbnail button all
+  // funnel their "New chat" click through this one main-process message
+  // (see desktop/src/main.js) rather than each needing their own renderer
+  // wiring — onTrayAction itself is a no-op on other platforms.
+  function setupTrayActions() {
+    if (!window.jioDesktop?.onTrayAction) return;
+    window.jioDesktop.onTrayAction((action) => {
+      if (action === 'new-chat') { newChat(); showView('chat'); $('#input').focus(); }
+    });
   }
   function setupLocalModel() {
     if (!window.jioDesktop) return;
@@ -1088,6 +1099,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
         liveEnqueue(full);
       });
       liveEyes?.set(mood || 'neutral'); setRoomMood(mood || 'neutral');
+      window.jioDesktop?.notify?.('jio replied', full.slice(0, 140));
     } catch (err) {
       if (err.name !== 'AbortError') {
         liveClearNow();
@@ -1226,6 +1238,10 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
       }
       showRoute(route);
       mascot.done(true, mood);
+      // Windows only, and only while jio isn't the focused window (see
+      // desktop/src/main.js) — a native toast for a reply that finished
+      // while you'd tabbed away.
+      window.jioDesktop?.notify?.('jio replied', full.slice(0, 140));
     } catch (err) {
       if (err.name === 'AbortError') { setBubble(bubble, full || '_stopped_', false); mascot.done(true, mood); }
       else {

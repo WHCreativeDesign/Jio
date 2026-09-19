@@ -259,4 +259,10 @@ fs.writeFileSync(path.join(OUT, 'installerSidebar.bmp'), writeBMP(164, 314, draw
 fs.writeFileSync(path.join(OUT, 'uninstallerSidebar.bmp'), writeBMP(164, 314, drawFace(164, 314, { panel: false })));
 fs.writeFileSync(path.join(OUT, 'installerHeader.bmp'), writeBMP(150, 57, drawFace(150, 57, { panel: false })));
 
+// The mark alone (rounded panel, same as the app icon), sized for the custom
+// welcome page's nsDialogs bitmap control (see nsis/installer.nsh) — flattened
+// onto JIO_BG so it sits flush against that page's own recolored background
+// instead of reading as a pasted sticker.
+fs.writeFileSync(path.join(OUT, 'gateLogo.bmp'), writeBMP(220, 132, drawFace(220, 132, { panel: true })));
+
 console.log('brand assets written to desktop/build/');

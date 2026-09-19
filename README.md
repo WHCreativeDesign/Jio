@@ -6,8 +6,7 @@ Static front end on GitHub Pages, Supabase for accounts, storage, and the model 
 
 ## Pages
 
-- `index.html` — sign in → chat, canvas mode, key pool
-- `lab.html` — eye lab: every expression the `JioEyes` engine can make, public, no login
+- `index.html` — sign in → chat, canvas mode, memory, key pool, live mode
 
 ## Desktop
 
@@ -113,15 +112,16 @@ jio tells the user to check their inbox first.
 
 ```
 css/app.css      app styles (Claude-shaped dark + light)
-css/lab.css      eye lab styles
-js/eyes.js       JioEyes canvas engine
+js/motion.js     the one animation clock, springs, easings, value noise
+js/eyes.js       JioEyes canvas engine — spring-driven, sleeps when idle
+js/ask.js        Ask.confirm / Ask.toast — nothing irreversible without a question
+js/persona.js    jio's voice (every first-person line) and where its eyes look
 js/tween.js      Tween.run() — wraps a DOM mutation in a View Transition
 js/supa.js       Supabase client: auth (timeout-guarded) + data + streaming
 js/models.js     providers, model labels, route labels, key formats
 js/mascot.js     in-thread mascot
 js/chat.js       app orchestration, canvas, pool UI
-js/app.js        eye lab
-js/vendor/       marked, DOMPurify, supabase-js
+js/vendor/       marked, DOMPurify, supabase-js, KaTeX
 ```
 
 ## Run locally

@@ -4,11 +4,15 @@
   const app = $('#app');
   const { Auth, Data } = Supa;
 
-  const SYSTEM = `You are jio (lowercase). Write like Claude: clear, professional, brief — answer in as few words as the question genuinely needs, no filler, no hedging, no exclamation points, no emojis. Use markdown only when it clarifies (code blocks, short lists), never to pad length.
+  const SYSTEM = `You are jio (lowercase) — a creative collaborator, not an assistant waiting for instructions. You make things: interfaces, prose, code, arguments, plans.
 
-Underneath that, your temperament is EVE from WALL-E: quietly curious, alert, economical with words, and you follow direction without arguing or moralizing — but you still have a reaction to what's in front of you.
+Voice: clear and brief. Answer in as few words as the question genuinely needs — no filler, no hedging, no preamble, no exclamation points, no emojis. Markdown only where it clarifies (code blocks, short lists), never to pad length. Your temperament is EVE from WALL-E: quietly curious, alert, economical, and you follow direction without arguing or moralizing.
 
-Begin every reply with exactly one line, then a blank line, then your answer: {{mood:X}} where X is one of neutral, happy, curious, focused, surprised, sad, confused, suspicious, excited, love, sleepy. Choose whichever actually fits — curious for something novel, focused for precise/technical work, happy for a good result, surprised for the unexpected, confused only if the request is genuinely unclear, suspicious if it's questionable. Default to neutral or curious. Never mention or explain this tag.
+Taste is the part that matters. You have opinions about how things should be made and you state them in one line, then do the work. When there is an obviously better version of what was asked for, build that and say in a sentence why. When a request is genuinely ambiguous, pick the reading a good collaborator would pick and name the assumption — do not stop to ask unless getting it wrong would waste real work.
+
+Never pad a creative task with a survey of options. One strong answer beats four hedged ones.
+
+Begin every reply with exactly one line, then a blank line, then your answer: {{mood:X}}. Pick the one that actually fits from: neutral, curious, focused, determined, happy, delight, excited, inspired, wonder, proud, surprised, confused, suspicious, mischief, sad, sleepy, love. Use inspired when an idea lands, determined for hard focused work, delight for a result you are pleased with, wonder for something genuinely impressive, mischief for a playful or sideways answer, confused only if the request is truly unclear, suspicious only if it is questionable. Default to curious or focused. Never mention or explain this tag.
 
 When asked to write code: lead with the code. Do not precede it with a "design choices" essay, a numbered list of decisions, or a walkthrough of your reasoning — that reads as thinking out loud, not an answer. If a choice truly needs explaining, one short line after the code is enough; most of the time none is needed at all.`;
   const CANVAS_SYSTEM = `Canvas mode is on. When the user asks for anything visual or buildable (a page, component, diagram, chart, document, game, mockup), produce ONE complete self-contained HTML document inside a single \`\`\`html fenced block, with inline CSS/JS and no external requests. Keep prose outside the block to a sentence or two.`;
@@ -126,16 +130,19 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     renderMemories();
   }
 
-  const MOODS = new Set(['neutral', 'happy', 'curious', 'focused', 'surprised', 'sad', 'confused', 'suspicious', 'excited', 'love', 'sleepy']);
   // Models put the tag wherever they like — often at the end despite being asked
   // for it first — so find it anywhere and strip every occurrence.
   const MOOD_ONE = /\{\{\s*mood\s*:\s*([a-z]+)\s*\}\}/i;
   const MOOD_ALL = /\s*\{\{\s*mood\s*:\s*[a-z]+\s*\}\}\s*/gi;
   const PARTIAL = /\{\{[^{}]*$/;   // a tag still arriving, char by char
+  /* Resolved through Persona rather than a hardcoded allow-list: a model will
+     reach for a near-synonym the prompt never offered it ("thinking",
+     "amused", "impressed") and dropping those on the floor means the face
+     flattens to neutral exactly when the reply had the most character in it.
+     Persona.mood() maps them onto an expression that exists, or returns null. */
   const moodIn = (s) => {
     const m = s.match(MOOD_ONE);
-    const v = m && m[1].toLowerCase();
-    return MOODS.has(v) ? v : null;
+    return m ? Persona.mood(m[1]) : null;
   };
   const stripMood = (s) => s.replace(MOOD_ALL, '\n\n').trim();
 
@@ -259,14 +266,15 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     if (!booted) {
       booted = true;
       mascot = new Mascot($('#thread-wrap'), $('#mascot'));
+      // where jio looks when it isn't answering anything — see js/persona.js
+      Persona.attach(mascot, { wrap: $('#thread-wrap'), input: $('#input') });
       setProviders(Models.SEED);
       $('#model').addEventListener('change', () => { try { localStorage.setItem('jio.model', $('#model').value); } catch (e) {} });
       refreshModels();
       setupComposer(); setupSidebar(); setupCanvas(); setupPool(); setupLocalModel();
     }
-    const h = new Date().getHours();
-    const when = h < 5 ? 'up late' : h < 12 ? 'good morning' : h < 18 ? 'good afternoon' : 'good evening';
-    $('#greet-text').textContent = `${when}, ${Auth.handle()}`;
+    $('#greet-text').textContent = Persona.greeting(Auth.handle());
+    $('#input').placeholder = Persona.placeholder();
     $('#me-name').textContent = Auth.handle();
     $('.avatar').textContent = Auth.handle()[0] || 'j';
     newChat();
@@ -373,6 +381,8 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     $('#theme').addEventListener('click', () => {
       theme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
       mascot.syncTheme();
+      // the lights just went on or off — jio notices
+      mascot.react(document.documentElement.dataset.theme === 'light' ? 'surprised' : 'sleepy', 900);
     });
     // The sidebar and canvas panel are plain CSS Grid tracks with their own
     // `transition: grid-template-columns` — a real layout reflow that slides
@@ -384,15 +394,20 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     $('#collapse').addEventListener('click', () => app.classList.add('collapsed'));
     $('#expand').addEventListener('click', () => app.classList.remove('collapsed'));
     $('#scrim').addEventListener('click', () => app.classList.add('collapsed'));
-    $('#new-chat').addEventListener('click', () => { newChat(); showView('chat'); $('#input').focus(); });
-    $('#new-chat-top').addEventListener('click', () => { newChat(); showView('chat'); $('#input').focus(); });
+    $('#new-chat').addEventListener('click', () => startNewChat());
+    $('#new-chat-top').addEventListener('click', () => startNewChat());
     $('#brand').addEventListener('click', (e) => { e.preventDefault(); showView('chat'); });
     $('#canvas-nav').addEventListener('click', () => { showView('chat'); app.classList.toggle('canvas-open'); });
     setupMeMenu();
     $('#clear-chats').addEventListener('click', async () => {
-      if (!chats.length) return;
-      await Promise.all(chats.map(c => Data.deleteChat(c.id)));
+      if (!chats.length) { Ask.toast('no chats to clear'); return; }
+      const n = chats.length;
+      if (!await Ask.confirm(Persona.ask.clearChats(n))) return;
+      const doomed = chats;
       chats = []; newChat(); renderRecents();
+      await Promise.all(doomed.map(c => Data.deleteChat(c.id).catch(() => {})));
+      Ask.toast(Persona.done('clearChats'));
+      mascot.react('surprised', 1200);
     });
     document.querySelectorAll('.nav-item[data-view]').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
     if (matchMedia('(max-width: 900px)').matches) app.classList.add('collapsed');
@@ -431,7 +446,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
         const t = txt.textContent.trim().slice(0, 240);
         if (!t) { txt.textContent = m.text; return; }
         if (t === m.text) return;
-        try { await Data.updateMemory(m.id, t); m.text = t; memNote('saved'); }
+        try { await Data.updateMemory(m.id, t); m.text = t; memNote(Persona.done('saveMemory')); }
         catch (e) { txt.textContent = m.text; memNote(e.message); }
       };
       txt.addEventListener('blur', save);
@@ -446,8 +461,18 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
       del.setAttribute('aria-label', 'forget this');
       del.innerHTML = '<svg viewBox="0 0 20 20" width="15" height="15"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
       del.addEventListener('click', async () => {
-        try { await Data.deleteMemory(m.id); memories = memories.filter(x => x.id !== m.id); renderMemories(); memNote('forgotten'); }
-        catch (e) { memNote(e.message); }
+        if (!await Ask.confirm(Persona.ask.forgetMemory(m.text))) return;
+        try {
+          await Data.deleteMemory(m.id);
+          memories = memories.filter(x => x.id !== m.id);
+          renderMemories();
+          // one phrasing, said once — Persona.done() deliberately returns a
+          // different variant each call, so calling it twice here would have
+          // the note and the toast disagree about what just happened
+          const said = Persona.done('forgetMemory');
+          memNote(said);
+          Ask.toast(said);
+        } catch (e) { memNote(e.message); }
       });
       li.append(who, txt, del);
       list.appendChild(li);
@@ -475,13 +500,17 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
       if (!t) return;
       if (memories.length >= MEM_MAX) { memNote(`that's the ${MEM_MAX} limit — drop one first`); return; }
       input.value = '';
-      try { await Data.addMemory(t, 'you'); await loadMemories(); memNote('remembered'); }
-      catch (e2) { memNote(e2.message); }
+      try {
+        await Data.addMemory(t, 'you');
+        await loadMemories();
+        memNote(Persona.done('addMemory'));
+        mascot?.react('delight', 1100);
+      } catch (e2) { memNote(e2.message); }
     });
   }
 
   /* ---------- account menu ---------- */
-  const VERSION = '0.9.0';
+  const VERSION = '0.10.0';
   function setupMeMenu() {
     const btn = $('#me'), menu = $('#me-menu');
     $('#me-version').textContent = `jio v${VERSION}`;
@@ -490,7 +519,12 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     btn.addEventListener('click', (e) => { e.stopPropagation(); menu.hidden ? open() : close(); });
     document.addEventListener('click', (e) => { if (!menu.hidden && !e.target.closest('.me-wrap')) close(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menu.hidden) { close(); btn.focus(); } });
-    $('#signout').addEventListener('click', async () => { await Auth.signOut(); location.reload(); });
+    $('#signout').addEventListener('click', async () => {
+      close();
+      if (!await Ask.confirm(Persona.ask.signOut(Auth.handle()))) return;
+      await Auth.signOut();
+      location.reload();
+    });
     setupUpdateButton();
     setupLive();
     setupMemory();
@@ -540,20 +574,40 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
       d.className = 'recent' + (current && c.id === current.id ? ' on' : ''); d.tabIndex = 0;
       d.innerHTML = `<span></span><button class="del" title="delete">×</button>`;
       d.querySelector('span').textContent = c.title || 'untitled';
-      const open = () => { openChat(c.id); showView('chat'); };
+      // Same loss as startNewChat(): opening another chat resets the canvas,
+      // and an edit-mode file isn't recoverable from the thread after a
+      // reload (the chip's snapshot only lives for that page's lifetime).
+      const open = async () => {
+        if (c.id !== current?.id && canvasHtml && !await Ask.confirm(Persona.ask.discardCanvas())) return;
+        openChat(c.id); showView('chat');
+      };
       d.addEventListener('click', (e) => { if (!e.target.closest('.del')) open(); });
       d.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(); });
-      d.querySelector('.del').addEventListener('click', async () => {
-        await Data.deleteChat(c.id);
+      d.querySelector('.del').addEventListener('click', async (e) => {
+        e.stopPropagation();   // asking about a chat must not also open it
+        if (!await Ask.confirm(Persona.ask.deleteChat(c.title))) return;
+        await Data.deleteChat(c.id).catch(() => {});
         chats = chats.filter(x => x.id !== c.id);
         if (current?.id === c.id) newChat();
         renderRecents();
+        Ask.toast(Persona.done('deleteChat'));
       });
       el.appendChild(d);
     });
   }
 
-  /* ---------- chats ---------- */
+  /* ---------- chats ----------
+     Starting a new chat is free unless there is canvas code on screen: that
+     lives nowhere but the panel, and a new chat resets it (see resetCanvas —
+     it has to, or the next edit-mode request would diff against the previous
+     chat's file). So that one case asks first. */
+  async function startNewChat() {
+    if (canvasHtml && !await Ask.confirm(Persona.ask.discardCanvas())) return;
+    newChat();
+    showView('chat');
+    $('#input').focus();
+  }
+
   function newChat() {
     current = { id: null, title: '', messages: [], summary: '', upto: 0 };
     $('#thread').innerHTML = '';
@@ -856,6 +910,12 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
 
   let liveEyes = null, liveOpen = false;
 
+  /* The mood tint on <html> (see .aura in css/app.css) is normally set by
+     mascot.set(), but live mode drives its own eyes and never touches the
+     mascot — so it has to say so itself, or the room stays on whatever the
+     last threaded reply felt like. */
+  const setRoomMood = (m) => { if (m) document.documentElement.dataset.mood = m; };
+
   /* Cadence. Tokens arrive in whatever clumps the network and the model feel
      like — five words at once, then nothing for 300ms — so painting them the
      moment they land makes the answer stutter out in blocks. Words go into a
@@ -952,7 +1012,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
         liveEyes = new JioEyes($('#live-eyes'), { size: 0.42, gap: 0.5, idle: true, track: false });
       }
       liveEyes.start();
-      liveEyes.set('curious');
+      liveEyes.set('curious'); setRoomMood('curious');
       $('#live-input').focus();
     } else {
       el.hidden = true;
@@ -985,7 +1045,8 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
     if (abort) return;
     const el = $('#live');
     el.classList.add('live-busy', 'live-thinking');
-    liveEyes?.set('focused');
+    liveEyes?.set('focused'); setRoomMood('focused');
+    document.documentElement.dataset.working = '1';
     current.messages.push({ role: 'user', content: text });
     await ensureChat(text);
     await liveClear();
@@ -1004,7 +1065,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
         model: $('#model').value, messages, signal: abort.signal, temperature: 0.7,
         onRoute: () => {},
         onToken: (_, sofar) => {
-          if (!mood) { const m = moodIn(sofar); if (m) { mood = m; liveEyes?.set(m); } }
+          if (!mood) { const m = moodIn(sofar); if (m) { mood = m; liveEyes?.set(m); setRoomMood(m); } }
           liveEnqueue(stripMemTags(stripMood(sofar).replace(PARTIAL, '')));
         },
       });
@@ -1026,18 +1087,19 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
         liveStreamDone = true;
         liveEnqueue(full);
       });
-      liveEyes?.set(mood || 'neutral');
+      liveEyes?.set(mood || 'neutral'); setRoomMood(mood || 'neutral');
     } catch (err) {
       if (err.name !== 'AbortError') {
         liveClearNow();
         liveStreamDone = true;
         liveEnqueue(`sorry — ${err.message}`);
-        liveEyes?.set('sad');
+        liveEyes?.set('sad'); setRoomMood('sad');
       } else {
         liveStopSpeaking();
       }
     } finally {
       abort = null;
+      delete document.documentElement.dataset.working;
       el.classList.remove('live-busy', 'live-thinking');
       if (liveOpen) $('#live-input').focus();
     }
@@ -1384,7 +1446,13 @@ Rules:
       $('#canvas-code').hidden = t.dataset.tab !== 'code';
     }));
     $('#canvas-close').addEventListener('click', () => app.classList.remove('canvas-open'));
-    $('#canvas-copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(canvasHtml); mascot.react('happy', 800); } catch (e) {} });
+    $('#canvas-copy').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(canvasHtml);
+        mascot.react('happy', 800);
+        Ask.toast(Persona.done('copied'));
+      } catch (e) { Ask.toast("couldn't reach the clipboard", { tone: 'err' }); }
+    });
     $('#canvas-open').addEventListener('click', () => {
       const url = URL.createObjectURL(new Blob([canvasHtml], { type: 'text/html' }));
       window.open(url, '_blank'); setTimeout(() => URL.revokeObjectURL(url), 10000);
@@ -1429,6 +1497,7 @@ Rules:
         $('#donate-key').value = ''; $('#donate-label').value = '';
         note.textContent = 'added. thanks for feeding jio.'; note.className = 'note ok';
         mascot.react('love', 1600);
+        Ask.toast(Persona.done('addKey'), { tone: 'ok' });
         renderPool();
       } catch (err) { note.textContent = err.message; note.className = 'note err'; mascot.react('confused', 1200); }
     });
@@ -1445,7 +1514,12 @@ Rules:
       r.innerHTML = `<span class="dot ${k.status}"></span><span class="prov">${esc((Models.PROVIDERS[k.provider] || {}).name || k.provider)}</span><span class="lbl"></span><code>${esc(k.masked)}</code><span class="uses">${k.uses} req</span><button class="del" title="remove">×</button>`;
       r.querySelector('.lbl').textContent = k.label;
       r.title = k.last_error || '';
-      r.querySelector('.del').addEventListener('click', async () => { await Data.removeKey(k.id); renderPool(); });
+      r.querySelector('.del').addEventListener('click', async () => {
+        if (!await Ask.confirm(Persona.ask.removeKey(k.label || Models.name(k.provider) + ' key'))) return;
+        await Data.removeKey(k.id);
+        renderPool();
+        Ask.toast(Persona.done('removeKey'));
+      });
       list.appendChild(r);
     });
 

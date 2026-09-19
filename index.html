@@ -68,6 +68,11 @@
   </section>
 
   <div id="app" class="app" hidden>
+    <!-- jio's presence in the room: a soft light rising from where it speaks,
+         tinted by whatever mood its last reply carried. Purely decorative and
+         entirely CSS (see .aura) — nothing reads or writes it but the mood
+         attribute js/mascot.js puts on <html>. -->
+    <div class="aura" aria-hidden="true"></div>
     <button class="scrim" id="scrim" aria-label="close sidebar" tabindex="-1"></button>
     <aside class="sidebar" id="sidebar">
       <div class="side-head">
@@ -283,7 +288,13 @@
   <script defer src="js/vendor/katex/katex.min.js"></script>
   <script defer src="js/vendor/katex/auto-render.min.js"></script>
   <script defer src="js/tween.js"></script>
+  <!-- Order matters, and `defer` is what guarantees it: motion.js owns the
+       single animation clock and the spring/easing primitives every other
+       module destructures at load time, so it has to be evaluated first. -->
+  <script defer src="js/motion.js"></script>
   <script defer src="js/eyes.js"></script>
+  <script defer src="js/ask.js"></script>
+  <script defer src="js/persona.js"></script>
   <script defer src="js/models.js"></script>
   <script defer src="js/supa.js"></script>
   <script defer src="js/mascot.js"></script>

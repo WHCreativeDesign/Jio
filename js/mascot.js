@@ -4,15 +4,17 @@
   'use strict';
 
   const CW = 64, CH = 40;
-  const lerp = (a, b, t) => a + (b - a) * t;
-  const easeOutExpo = (t) => t >= 1 ? 1 : 1 - Math.pow(2, -10 * t);
-  const easeInOut = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  const { lerp, Ease } = global.Motion;
+  const easeOutExpo = Ease.outExpo;
+  const easeInOut = Ease.inOutCubic;
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const r3 = (n) => Math.round(n * 1000) / 1000;
 
   class Mascot {
     constructor(wrap, el) {
       this.wrap = wrap; this.el = el;
       this.canvas = el.querySelector('canvas');
-      this.eyes = new JioEyes(this.canvas, { size: 0.5, gap: 0.5, idle: true, track: false, color: this.themeColor() });
+      this.eyes = new JioEyes(this.canvas, { size: 0.5, gap: 0.5, idle: true, track: true, color: this.themeColor() });
       this.eyes.start();
       this.slot = null;
       this.mood = 'neutral';
@@ -23,7 +25,15 @@
       this.hoverLift = 0; this.hoverTilt = 0;
       this._inspect = null;
       this._judging = false; this._judgeQueue = [];
-      this.raf = requestAnimationFrame(this.tick.bind(this));
+      // Every written style is cached and compared before it is written.
+      // Assigning el.style.width/height invalidates layout whether or not the
+      // value changed, and these ran on every single frame — so the mascot
+      // was forcing a layout pass sixty times a second to hold still.
+      this._applied = { t: '', ct: '', w: -1, h: -1 };
+      // one clock for the whole app (see js/motion.js) rather than a private
+      // rAF loop per animated thing
+      this.tick = this.tick.bind(this);
+      global.Motion.add(this.tick);
 
       el.addEventListener('click', () => this.react('surprised', 900));
       this.ro = new ResizeObserver(() => this.sync());
@@ -135,9 +145,7 @@
       if (d < 60) { this.cur = tgt; this.apply(); } else this.moveTo(this.slot);
     }
 
-    tick(now) {
-      this.raf = requestAnimationFrame(this.tick.bind(this));
-
+    tick(dt, now) {
       /* Inspection drives itself from here: hop when the current pause is up,
          aim the gaze every frame (the mascot is usually moving, so a gaze set
          once at arrival would slide off the message), and hover in place
@@ -168,18 +176,39 @@
       if (p >= 1) { this.cur = t; this.to = null; this.apply(); }
     }
 
+    /* The only place this thing touches the DOM. Two rules hold it to a
+       compositor-only cost: never write a value that is already there, and
+       round the sub-pixel noise off first — a transform that differs in the
+       fourth decimal place is a repaint nobody can see. */
     apply(lean = 0, lift = 0, squash = 1) {
       const c = this.cur; if (!c) return;
       lift += this.hoverLift || 0;
       lean += this.hoverTilt || 0;
-      this.el.style.transform = `translate(${c.x}px, ${c.y + lift}px)`;
-      this.el.style.width = c.w + 'px'; this.el.style.height = c.h + 'px';
+      const a = this._applied;
+
+      const t = `translate3d(${r2(c.x)}px, ${r2(c.y + lift)}px, 0)`;
+      if (t !== a.t) { this.el.style.transform = a.t = t; }
+
+      // width/height are layout, so they are only written when the mascot
+      // genuinely changes size — which is on arrival at a differently-sized
+      // slot, not on every frame of getting there
+      const w = r2(c.w), h = r2(c.h);
+      if (w !== a.w) { this.el.style.width = w + 'px'; a.w = w; }
+      if (h !== a.h) { this.el.style.height = h + 'px'; a.h = h; }
+
       const k = Math.min(c.w / CW, c.h / CH) * 0.86 * this.judgeScale;
-      this.canvas.style.transform =
-        `translate(calc(-50% + ${this.judgeShakeX}px), -50%) rotate(${lean + this.judgeRot}deg) scale(${k}, ${k * squash})`;
+      const ct = `translate(calc(-50% + ${r2(this.judgeShakeX)}px), -50%) rotate(${r2(lean + this.judgeRot)}deg) scale(${r3(k)}, ${r3(k * squash)})`;
+      if (ct !== a.ct) { this.canvas.style.transform = a.ct = ct; }
     }
 
-    set(mood) { this.mood = mood; this.eyes.set(mood); }
+    /* A settled mood, not a passing reaction — so it is also what the room
+       is tinted by (see .aura in css/app.css). react() deliberately does not
+       come through here: a 900ms glance should not repaint the screen. */
+    set(mood) {
+      this.mood = mood;
+      this.eyes.set(mood);
+      document.documentElement.dataset.mood = mood;
+    }
     react(mood, ms) {
       if (this.busy) return;
       const prev = this.mood;
@@ -188,12 +217,18 @@
       this._reactT = setTimeout(() => this.eyes.set(this.mood = prev), ms);
     }
     /* Working on it: focused reads as engaged/thinking, not a robotic sweep. */
-    work() { this.busy = true; clearTimeout(this._reactT); this.set('focused'); }
+    work() {
+      this.busy = true;
+      clearTimeout(this._reactT);
+      this.set('focused');
+      document.documentElement.dataset.working = '1';
+    }
     /* mood, if given (the reply's own {{mood:x}} tag), holds a while — an emotion
        that snaps back instantly doesn't read as real — then eases to neutral. */
     done(ok = true, mood = null) {
       this.stopInspect();
       this.busy = false;
+      delete document.documentElement.dataset.working;
       clearTimeout(this._reactT);
       if (mood) { this.set(mood); this._reactT = setTimeout(() => this.set('neutral'), 2200); }
       else { this.set('neutral'); this.react(ok ? 'happy' : 'sad', 1400); }
@@ -300,7 +335,7 @@
       const total = G + H + S + K;
       this.eyes.set('surprised');
 
-      const step = (now) => {
+      const step = (dt, now) => {
         const t = now - t0;
         if (t < G) {
           this.judgeScale = 1 + 0.9 * easeOutExpo(t / G);
@@ -320,19 +355,19 @@
           if (p > 0.05 && p < 0.09) this.eyes.set('confused');
         } else {
           this.judgeScale = 1; this.judgeShakeX = 0; this.judgeRot = 0;
-      this.hoverLift = 0; this.hoverTilt = 0;
-      this._inspect = null;
+          this.hoverLift = 0; this.hoverTilt = 0;
+          this._inspect = null;
           this.apply();
           this._judging = false; this.busy = false;
           this.set('neutral');
           const queued = this._judgeQueue; this._judgeQueue = [];
           queued.forEach(fn => fn());
+          off();
           return;
         }
         this.apply();
-        requestAnimationFrame(step);
       };
-      requestAnimationFrame(step);
+      const off = global.Motion.add(step);
     }
     /* Run fn once any judge() reaction in progress has finished (or now, if none is). */
     afterJudge(fn) {

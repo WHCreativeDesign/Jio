@@ -35,7 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p _site
-          cp -R index.html lab.html css js _site/
+          cp -R index.html css js _site/
           # CNAME is what points the site at jio.usecloak.org; .nojekyll stops
           # Pages running the files through Jekyll
           for f in CNAME .nojekyll; do [ -e "$f" ] && cp "$f" _site/; done

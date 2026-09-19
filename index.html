@@ -25,6 +25,13 @@
       // resource load failures (a blocked font, say) are not script errors — they bubble
       // here with a target element and must not raise a banner
       if (e.target && e.target !== window) return;
+      // Chrome and Safari both report this one as a genuine window 'error'
+      // event, but it is not: it fires whenever a ResizeObserver callback
+      // couldn't be delivered before the next frame, which happens on
+      // perfectly working pages (a mobile keyboard opening and resizing the
+      // visual viewport is a common trigger) and never means the app is
+      // broken. Nothing else here should ever share this exact message.
+      if (e.message && e.message.indexOf('ResizeObserver loop') !== -1) return;
       bootBanner(e.message || 'script error');
     }, true);
     addEventListener('unhandledrejection', function (e) {

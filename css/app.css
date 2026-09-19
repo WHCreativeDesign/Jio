@@ -877,7 +877,19 @@ canvas { display: block; }
   gap: 26px;
 }
 .live-eyes {
-  width: min(360px, 62vw); height: auto; flex: none;
+  /* Explicit ratio, not height:auto: auto derives a canvas's box height from
+     its width/height ATTRIBUTES, which js/eyes.js's resize() rewrites on
+     every ResizeObserver callback (to match the backing store to devicePixelRatio).
+     That makes the box's own observed size depend on attributes the observer's
+     own callback just changed — a feedback loop DPR-rounding never quite
+     converges, which is exactly what Chrome/Safari's "ResizeObserver loop
+     completed with undelivered notifications" reports, and on a phone (the
+     opening keyboard resizes the visual viewport, kicking the loop off) it
+     ran away visibly: the eyes ballooned to fill the space above the keys.
+     aspect-ratio keeps height a pure function of width, entirely independent
+     of the canvas's own width/height attributes — same fix as .gate-logo
+     canvas and .mascot canvas already use via two explicit dimensions. */
+  width: min(360px, 62vw); aspect-ratio: 26 / 15; flex: none;
   filter: drop-shadow(0 6px 28px rgba(0, 0, 0, 0.45));
   transition: width var(--t-slow) var(--ease-pop);
 }

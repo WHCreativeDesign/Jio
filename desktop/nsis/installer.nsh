@@ -133,3 +133,80 @@
 
   !define MUI_CUSTOMFUNCTION_GUIINIT jioGuiInit
 !endif
+
+; --- Custom welcome page: jio's own gate screen, not MUI's stock wizard text --
+;
+; MUI's welcome page is a title, a paragraph, and (via MUI_WELCOMEFINISHPAGE_BITMAP,
+; set elsewhere by electron-builder from installerSidebar.bmp) a banner down the
+; left edge — recognizably "an installer with our colors and a picture on it".
+; jio's own boot/sign-in screen (css/app.css's .gate/.gate-card) has none of
+; that: a plain dark backdrop, one centered card holding the mark, the "jio"
+; wordmark, and an uppercase tracked subtitle. This page rebuilds that
+; composition control-by-control with nsDialogs — the closest thing to
+; shipping the actual HTML screen inside an NSIS dialog — rather than
+; decorating the stock layout further.
+;
+; assistedInstaller.nsh looks for a macro named exactly `customWelcomePage`
+; and, if it's defined anywhere (this file is !included before that check
+; runs — see the top of this file), uses it in place of !insertmacro
+; MUI_PAGE_WELCOME. There's no "call the default too" option: defining this
+; macro means fully owning what shows up first.
+!ifndef BUILD_UNINSTALLER
+  Var jioWelcomeLogo
+  Var jioWelcomeLogoHandle
+  Var jioWelcomeWordmark
+  Var jioWelcomeFont
+
+  Function jioWelcomeCreate
+    ; blanks the header title/subtitle band MUI would otherwise print above a
+    ; custom page — the card below supplies its own identity, a second "jio"
+    ; up top would just be noise
+    !insertmacro MUI_HEADER_TEXT " " " "
+
+    nsDialogs::Create 1018
+    Pop $0
+    ${If} $0 == error
+      Abort
+    ${EndIf}
+
+    ; the mark itself: same rounded panel + pill eyes as the app icon and
+    ; taskbar tray icon, drawn by desktop/scripts/gen-brand-assets.js against
+    ; jio's own background so it sits flush rather than reading as a sticker
+    ${NSD_CreateBitmap} 105u 12u 90u 54u ""
+    Pop $jioWelcomeLogo
+    ${NSD_SetStretchedBitmap} $jioWelcomeLogo "${BUILD_RESOURCES_DIR}\gateLogo.bmp" $jioWelcomeLogoHandle
+    SetCtlColors $jioWelcomeLogo ${JIO_FG} ${JIO_BG}
+
+    ; the wordmark, set in a serif face the same way css/app.css's --serif
+    ; token does (Georgia is the same fallback that stack ends on) — a plain
+    ; dialog-font "jio" would read as a label, not a mark
+    CreateFont $jioWelcomeFont "Georgia" "20" "400"
+    ${NSD_CreateLabel} 0 76u 100% 22u "jio"
+    Pop $jioWelcomeWordmark
+    SendMessage $jioWelcomeWordmark ${WM_SETFONT} $jioWelcomeFont 1
+    ${NSD_AddStyle} $jioWelcomeWordmark ${SS_CENTER}
+    SetCtlColors $jioWelcomeWordmark ${JIO_FG} ${JIO_BG}
+
+    ; .gate-sub's own treatment: small, tracked caps, the dimmest of jio's
+    ; three text tones
+    ${NSD_CreateLabel} 0 101u 100% 12u "SETUP"
+    Pop $1
+    ${NSD_AddStyle} $1 ${SS_CENTER}
+    SetCtlColors $1 ${JIO_FG3} ${JIO_BG}
+
+    ${NSD_CreateLabel} 32u 128u 253u 60u "This installs jio $— Claude-powered conversation, memory, and canvas, right on your desktop.$\r$\n$\r$\nClick Next to continue."
+    Pop $2
+    SetCtlColors $2 ${JIO_FG2} ${JIO_BG}
+
+    SetCtlColors $0 ${JIO_FG} ${JIO_BG}
+    nsDialogs::Show
+  FunctionEnd
+
+  Function jioWelcomeLeave
+    ${NSD_FreeBitmap} $jioWelcomeLogoHandle
+  FunctionEnd
+
+  !macro customWelcomePage
+    Page custom jioWelcomeCreate jioWelcomeLeave
+  !macroend
+!endif

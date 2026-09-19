@@ -23,6 +23,17 @@ contextBridge.exposeInMainWorld('jioDesktop', {
   },
   openExternal: (url) => ipcRenderer.invoke('jio:open-external', url),
   appVersion: () => ipcRenderer.invoke('jio:app-version'),
+  // Windows only — resolves false (and shows nothing) on other platforms or
+  // while jio's own window already has focus, so callers can fire this on
+  // every reply without checking anything themselves.
+  notify: (title, body) => ipcRenderer.invoke('jio:notify', { title, body }),
+  // Fires for a tray/jump-list/thumbar "New chat" click, or a second launch
+  // with --new-chat — see desktop/src/main.js's handleLaunchArgs.
+  onTrayAction: (cb) => {
+    const handler = (_e, action) => cb(action);
+    ipcRenderer.on('jio:tray-action', handler);
+    return () => ipcRenderer.removeListener('jio:tray-action', handler);
+  },
   checkForUpdates: () => ipcRenderer.invoke('jio:check-for-updates'),
   quitAndInstall: () => ipcRenderer.invoke('jio:quit-and-install'),
   openReleases: () => ipcRenderer.invoke('jio:open-releases'),

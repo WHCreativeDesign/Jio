@@ -6,6 +6,8 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..', '..');
 const DEST = path.join(__dirname, '..', 'web');
+// lab.html was removed with the eye lab; listing it here made statSync throw
+// ENOENT and took the whole desktop packaging step down with it.
 const ENTRIES = ['index.html', 'css', 'js'];
 
 function copy(src, dest) {

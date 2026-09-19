@@ -17,14 +17,18 @@ Jio is an AI conversation platform built around Claude's API, featuring live wor
 ```
 index.html           Main app shell, nav, view containers
 js/
+  motion.js          The single animation clock, springs, easings, value noise
+  eyes.js            JioEyes canvas engine — expressions, springs, idle sleep
+  ask.js             Ask.confirm / Ask.toast — the confirmation layer
+  persona.js         jio's voice (all first-person copy) + where its eyes look
+  tween.js           Tween.run() — wraps a DOM mutation in a View Transition
   chat.js            Message handling, live mode, memory system, streaming
-  supa.js            Supabase client wrapper (auth, messages, memories, canvas)
-  mascot.js          Eye animation state machine (thinking, speaking, breathing)
-  keys.js            Claude API key management
-  canvas.js          Collaborative canvas (drawing, shapes, history)
+  supa.js            Supabase client wrapper (auth, messages, memories, keys)
+  mascot.js          The in-thread mascot: slot gliding, inspection, reactions
+  models.js          Provider catalogue, model/route display names
 css/
-  app.css            Single stylesheet (7800+ lines, namespaced classes)
-  normalize.css      CSS reset
+  app.css            Single stylesheet, namespaced by component
+  newsreader.css     Vendored serif face
 desktop/
   src/main.js        Electron main process, app window, updater
   src/preload.js     IPC bridge between renderer and main
@@ -43,9 +47,13 @@ supabase/
 
 **State Management**: No framework—globals and event listeners. `currentView` controls UI, `sessionUserId` tracks auth, message history lives in Supabase. Component init/cleanup happens on view switch (see `renderView()`).
 
-**Animation**: Eye state tied to message flow: breathing on thinking (2.5s, -5px translateY), speaking (1.5s, -2.5px translateY). CSS classes toggle state; JS updates via `eyeStage.className`.
+**Animation**: Everything animated shares one clock (`Motion.add`, js/motion.js) — one `requestAnimationFrame`, one `dt`, and it stops dead when the tab is hidden. Eye shape is driven by springs (`Motion.Spring`), so an expression interrupted mid-morph redirects with its momentum instead of restarting. Each `JioEyes` instance reports whether it is `restless()`: busy instances paint every frame, resting-but-alive ones drop to 30Hz, off-screen ones (IntersectionObserver) paint nothing.
 
-**Canvas Collab**: Real-time drawing synced to Supabase via polling. Undo/redo handled client-side; full history stored server-side.
+**Confirmation**: Nothing irreversible happens on a single click. `Ask.confirm()` (js/ask.js) returns a Promise, is focus-trapped, opens on *cancel* for destructive actions, and carries jio's own eyes; `Persona.ask.*` (js/persona.js) holds the wording. Covered: deleting a chat, clearing all chats, forgetting a memory, removing a pool key, signing out, and discarding canvas code. Deliberately not covered: stopping a reply — it destroys nothing and speed is the point.
+
+**Personality**: Split in two. The model half is `SYSTEM` in js/chat.js plus the `{{mood:X}}` tag it returns. The interface half is js/persona.js: every first-person line the app says (with non-repeating variants), the mood→expression map, and the attention system that points jio's eyes at your pointer, the composer while you type, and away when you go quiet. Settled moods also tint the app via `data-mood` on `<html>` (see `.aura`).
+
+**Canvas**: One self-contained HTML document per chat, rendered in a sandboxed iframe. Once code exists, further turns request SEARCH/REPLACE diffs rather than a full rewrite.
 
 ## Recent Features
 
@@ -54,6 +62,8 @@ supabase/
 **Memory System** (0.9.0+): Persistent, editable memory accessible within Chat view. Memories tagged `[mem:id]` and injected into message context. Supabase RLS ensures user isolation. Reduces token spend on long conversations via 10-message rolling window.
 
 **Key Pool**: Multiple API keys allowed; app round-robins or falls back on rate limit. Managed in Settings.
+
+**Character & motion overhaul** (0.10.0+): Shared animation clock, spring-driven eyes with microsaccades and ambient breathing, six new expressions for the creative register (`inspired`, `delight`, `wonder`, `determined`, `mischief`, `shy`), the `Ask` confirmation layer over every destructive action, `Persona` as the app's voice and attention system, and a mood-tinted `.aura` wash behind the thread.
 
 ## Development
 

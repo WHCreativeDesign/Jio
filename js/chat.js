@@ -162,7 +162,7 @@ A separate SEARCH/REPLACE block per distinct change. Each SEARCH must match the 
      turning every currency mention into a KaTeX parse-error box. */
   const MATH_INLINE = /\$([^\n$]*\\[a-zA-Z]+[^\n$]*)\$/g;
   function renderMath(el) {
-    if (!window.renderMathInElement) return; // vendored katex not loaded (e.g. lab.html)
+    if (!window.renderMathInElement) return; // vendored katex not loaded
     renderMathInElement(el, {
       delimiters: [
         { left: '$$', right: '$$', display: true },
